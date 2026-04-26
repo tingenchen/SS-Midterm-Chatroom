@@ -48,9 +48,11 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   
-  // 訊息編輯狀態
+  // 訊息操作狀態 (編輯與回覆)
   const [editingMsgId, setEditingMsgId] = useState(null); 
   const [editMsgText, setEditMsgText] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null); 
+  const [highlightedMsgId, setHighlightedMsgId] = useState(null); 
   
   // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,7 +61,10 @@ export default function App() {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // --- 群組/邀請/編輯房間狀態 ---
+  // 【新增】紀錄是否是初次載入房間，或是自己剛發送訊息
+  const shouldAutoScroll = useRef(true);
+
+  // --- 群組狀態 ---
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [inviteMode, setInviteMode] = useState(false); 
   const [groupName, setGroupName] = useState('');
@@ -73,7 +78,7 @@ export default function App() {
       if (!currentUser) {
         setUserData(null); setAllUsers([]); setChatrooms([]);
         setCurrentRoom(null); setMessages([]); setEmail(''); setPassword('');
-        setSearchQuery(''); setSelectedImage(null);
+        setSearchQuery(''); setSelectedImage(null); setReplyingTo(null);
       }
     });
     return () => unsubscribe();
@@ -128,6 +133,11 @@ export default function App() {
     return () => { usersUnsub(); roomsUnsub(); };
   }, [user]);
 
+  // 切換房間時，允許自動滾動
+  useEffect(() => {
+    shouldAutoScroll.current = true;
+  }, [currentRoom?.id]);
+
   useEffect(() => {
     if (!currentRoom?.id) { setMessages([]); return; }
     const messagesUnsub = onSnapshot(collection(db, `chatrooms/${currentRoom.id}/messages`), (snapshot) => {
@@ -135,16 +145,31 @@ export default function App() {
       snapshot.forEach(d => msgs.push({ id: d.id, ...d.data() }));
       msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       setMessages(msgs);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      
+      // 【修改滾動邏輯】只有在被允許時才滾動
+      if (shouldAutoScroll.current && !searchQuery) {
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        // 初始滾動完後，關閉自動滾動，直到使用者發出新訊息
+        setTimeout(() => { shouldAutoScroll.current = false; }, 300);
+      }
     });
     return () => messagesUnsub();
-  }, [currentRoom?.id]);
+  }, [currentRoom?.id, searchQuery]);
 
+  // --- 發送訊息 ---
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if ((!newMessage.trim() && !selectedImage) || !currentRoom || isUploading) return;
 
     setIsUploading(true);
+    // 【新增】自己發送訊息時，強制允許捲動到底部
+    shouldAutoScroll.current = true;
+
+    const replyData = replyingTo ? {
+      id: replyingTo.id,
+      senderName: replyingTo.senderName,
+      text: replyingTo.imageUrl ? '傳送了一張圖片' : replyingTo.text
+    } : null;
 
     try {
       if (selectedImage) {
@@ -162,7 +187,8 @@ export default function App() {
           senderName: userData.username,
           senderPhoto: userData.photoURL || '', 
           createdAt: Date.now(),
-          isEdited: false 
+          isEdited: false,
+          replyTo: replyData 
         });
 
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
@@ -172,7 +198,6 @@ export default function App() {
 
         setSelectedImage(null);
         setNewMessage(''); 
-
       } else {
         await addDoc(collection(db, `chatrooms/${currentRoom.id}/messages`), {
           text: newMessage.trim(), 
@@ -181,7 +206,8 @@ export default function App() {
           senderName: userData.username,
           senderPhoto: userData.photoURL || '', 
           createdAt: Date.now(),
-          isEdited: false 
+          isEdited: false,
+          replyTo: replyData 
         });
 
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
@@ -191,6 +217,8 @@ export default function App() {
 
         setNewMessage('');
       }
+
+      setReplyingTo(null);
 
     } catch (err) {
       console.error("發送訊息過程中發生錯誤", err);
@@ -207,6 +235,21 @@ export default function App() {
         return;
       }
       setSelectedImage(e.target.files[0]);
+    }
+  };
+
+  // --- 點擊回覆並捲動至特定訊息並播放動畫 ---
+  const scrollToMessage = (msgId) => {
+    // 【新增】點擊跳轉時，關閉自動捲動到底部
+    shouldAutoScroll.current = false;
+    
+    const element = document.getElementById(`msg-${msgId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMsgId(msgId);
+      setTimeout(() => setHighlightedMsgId(null), 1200); 
+    } else {
+      alert("無法找到該則訊息，可能已被收回或刪除。");
     }
   };
 
@@ -229,11 +272,9 @@ export default function App() {
   const handleUnsendMessage = async (msg) => {
     if (!window.confirm("確定要收回這則訊息嗎？")) return;
     try {
-      // 僅刪除該則訊息，不觸發更新左側列表的 lastMessage
       await deleteDoc(doc(db, `chatrooms/${currentRoom.id}/messages`, msg.id));
     } catch (err) { alert("收回失敗：" + err.message); }
   };
-
 
   const startPrivateChat = async (targetUser) => {
     const existingRoom = chatrooms.find(room => room.type === 'private' && room.members.length === 2 && room.members.includes(targetUser.id));
@@ -344,6 +385,22 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans">
+      <style>{`
+        @keyframes pop-wobble {
+          0% { transform: scale(1) rotate(0deg); }
+          15% { transform: scale(1.05) rotate(-3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+          30% { transform: scale(1.05) rotate(3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+          45% { transform: scale(1.05) rotate(-3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+          60% { transform: scale(1.05) rotate(3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+          75% { transform: scale(1.05) rotate(-2deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+          100% { transform: scale(1) rotate(0deg); }
+        }
+        .animate-pop-wobble {
+          animation: pop-wobble 1.2s ease-in-out;
+          z-index: 20;
+          position: relative;
+        }
+      `}</style>
       
       {/* 左側 Sidebar */}
       <div className={`${currentRoom ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white border-r relative`}>
@@ -368,7 +425,7 @@ export default function App() {
         <div className="flex-1 overflow-y-auto">
           {sidebarTab === 'chats' ? (
             chatrooms.length > 0 ? chatrooms.map(room => (
-              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery('');}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''}`}>
+              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''}`}>
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
                   {getRoomPhoto(room) ? (
                     <img src={getRoomPhoto(room)} className="w-full h-full object-cover" alt="avatar" />
@@ -417,7 +474,7 @@ export default function App() {
           <>
             <div className="bg-white p-4 border-b flex items-center justify-between shadow-sm z-10">
               <div className="flex items-center flex-1 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition" onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
-                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); }} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">←</button>
+                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); }} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">←</button>
                 <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center overflow-hidden mr-3 flex-shrink-0">
                   {getRoomPhoto(currentRoom) ? (
                     <img src={getRoomPhoto(currentRoom)} className="w-full h-full object-cover" alt="avatar" />
@@ -446,47 +503,63 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50 relative">
               {filteredMessages.map(msg => {
                 const isMe = msg.senderId === user.uid;
                 const isSystem = msg.senderId === 'system';
+                const isHighlighted = highlightedMsgId === msg.id;
                 
                 if (isSystem) {
                   return (
-                    <div key={msg.id} className="flex justify-center my-2">
+                    <div key={msg.id} id={`msg-${msg.id}`} className={`flex justify-center my-2 ${isHighlighted ? 'animate-pop-wobble' : ''}`}>
                       <span className="bg-gray-200 text-gray-500 text-xs px-3 py-1 rounded-full font-medium">{msg.text}</span>
                     </div>
                   );
                 }
 
                 return (
-                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
+                  <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
                     {!isMe && (
                       <div className="w-8 h-8 rounded-full bg-gray-300 mr-2 flex-shrink-0 overflow-hidden flex items-center justify-center mt-1">
                         {msg.senderPhoto ? <img src={msg.senderPhoto} className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-white">{msg.senderName[0].toUpperCase()}</span>}
                       </div>
                     )}
                     
-                    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%]`}>
-                      {/* 操作選單：收回/編輯 (如果是圖片只能收回，不能編輯文字) */}
-                      {isMe && (
-                        <div className="flex gap-2 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-4 right-2 bg-white shadow-sm border rounded-lg px-2 py-1 z-10">
-                          {!msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className="text-xs text-blue-600 hover:text-blue-800 font-bold">編輯</button>}
-                          <button onClick={() => handleUnsendMessage(msg)} className="text-xs text-red-500 hover:text-red-700 font-bold">收回</button>
-                        </div>
-                      )}
+                    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] transition-transform duration-300 ${isHighlighted ? 'animate-pop-wobble' : ''}`}>
+                      
+                      <div className={`flex gap-2 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-4 ${isMe ? 'right-2' : 'left-10'} bg-white shadow-sm border border-gray-200 rounded-lg px-2 py-1 z-10`}>
+                        <button onClick={() => setReplyingTo(msg)} className="text-xs text-gray-500 hover:text-blue-600 font-bold">回覆</button>
+                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className="text-xs text-blue-600 hover:text-blue-800 font-bold">編輯</button>}
+                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className="text-xs text-red-500 hover:text-red-700 font-bold">收回</button>}
+                      </div>
 
-                      {/* 判斷是圖片還是文字，分開顯示不同的 UI */}
                       {msg.imageUrl ? (
-                        // 【情況 A】純圖片訊息 (不包氣泡框)
-                        <div className="rounded-2xl overflow-hidden shadow-sm border border-black/5">
+                        <div className={`rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : 'border-black/5'} transition-all`}>
+                           {msg.replyTo && (
+                             <div 
+                               onClick={() => scrollToMessage(msg.replyTo.id)}
+                               className="bg-black/80 text-white p-2 text-xs cursor-pointer hover:bg-black border-b border-white/20 transition flex flex-col"
+                             >
+                               <span className="font-bold text-blue-300">{msg.replyTo.senderName}</span>
+                               <span className="truncate opacity-80">{msg.replyTo.text}</span>
+                             </div>
+                           )}
                            <img src={msg.imageUrl} alt="chat image" className="max-w-[200px] sm:max-w-[300px] h-auto object-cover block" />
                         </div>
                       ) : (
-                        // 【情況 B】純文字訊息 (包在氣泡框)
-                        <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border'}`}>
+                        <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} transition-all ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border'}`}>
                           {!isMe && <p className="text-xs text-gray-400 mb-1 font-bold">{msg.senderName}</p>}
                           
+                          {msg.replyTo && (
+                            <div 
+                              onClick={() => scrollToMessage(msg.replyTo.id)}
+                              className={`rounded p-2 mb-2 text-xs cursor-pointer transition flex flex-col border-l-4 ${isMe ? 'bg-white/20 hover:bg-white/30 border-blue-200' : 'bg-gray-100 hover:bg-gray-200 border-blue-400'}`}
+                            >
+                              <span className="font-bold font-sans opacity-90">{msg.replyTo.senderName}</span>
+                              <span className="truncate opacity-80 mt-0.5">{msg.replyTo.text}</span>
+                            </div>
+                          )}
+
                           {editingMsgId === msg.id ? (
                             <div className="flex flex-col gap-2 min-w-[200px]">
                               <input type="text" value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)} className="text-black px-2 py-1 rounded text-sm w-full outline-none" autoFocus />
@@ -513,10 +586,19 @@ export default function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="bg-white border-t flex flex-col">
-              {/* 圖片預覽列 */}
+            <div className="bg-white border-t flex flex-col relative">
+              {replyingTo && (
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm">
+                   <div className="flex-1 truncate mr-4">
+                     <span className="font-bold text-blue-600 mr-2">回覆 {replyingTo.senderName} :</span>
+                     <span className="text-gray-600">{replyingTo.imageUrl ? '[圖片]' : replyingTo.text}</span>
+                   </div>
+                   <button onClick={() => setReplyingTo(null)} className="text-gray-400 hover:text-red-500 bg-white rounded-full p-1 shadow-sm font-bold w-6 h-6 flex items-center justify-center">✕</button>
+                </div>
+              )}
+
               {selectedImage && (
-                <div className="p-3 bg-gray-50 flex items-center justify-between border-b border-gray-100">
+                <div className="p-3 bg-gray-50 flex items-center justify-between border-b border-gray-100 mt-2 mx-4 rounded-xl border">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-200 rounded overflow-hidden">
                        <img src={URL.createObjectURL(selectedImage)} className="w-full h-full object-cover" />
@@ -536,9 +618,8 @@ export default function App() {
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 </button>
                 
-                {/* 如果有選圖片，就把文字輸入框隱藏或禁用 */}
                 {selectedImage ? (
-                   <div className="flex-1 flex items-center px-4 text-sm text-gray-500 font-bold">
+                   <div className="flex-1 flex items-center px-4 text-sm text-gray-500 font-bold bg-gray-100 h-12 rounded-3xl">
                      即將傳送一張圖片
                    </div>
                 ) : (
