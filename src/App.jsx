@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
-  collection, onSnapshot, addDoc, arrayUnion, query, orderBy, limit, getDocs 
+  collection, onSnapshot, addDoc, arrayUnion, query, orderBy, limit, getDocs, arrayRemove
 } from 'firebase/firestore';
 
 // --- 1. Firebase 初始化 ---
@@ -63,6 +63,10 @@ export default function App() {
 
   const shouldAutoScroll = useRef(true);
   const currentRoomIdRef = useRef(null);
+  
+  // 【新增】：使用 Ref 同步狀態，供 useEffect 內的非同步通知邏輯使用
+  const userDataRef = useRef(null);
+  const allUsersRef = useRef([]);
 
   // --- 群組狀態 ---
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -101,6 +105,7 @@ export default function App() {
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
           setUserData(userDoc.data());
+          userDataRef.current = userDoc.data();
           setProfileForm({
             username: userDoc.data().username || '', email: userDoc.data().email || user.email, 
             phone: userDoc.data().phone || '', address: userDoc.data().address || '', photoURL: userDoc.data().photoURL || ''
@@ -108,19 +113,30 @@ export default function App() {
         } else {
           const defaultData = {
             email: user.email, username: user.displayName || user.email?.split('@')[0] || 'Unknown',
-            address: '', phone: '', photoURL: user.photoURL || '', createdAt: Date.now()
+            address: '', phone: '', photoURL: user.photoURL || '', blockedUsers: [], createdAt: Date.now()
           };
           await setDoc(userDocRef, defaultData);
-          setUserData(defaultData); setProfileForm(defaultData);
+          setUserData(defaultData); 
+          userDataRef.current = defaultData;
+          setProfileForm(defaultData);
         }
       } catch (err) { console.error("抓取個人資料失敗:", err); }
     };
     fetchUserData();
 
+    // 監聽自己的資料更新 (確保封鎖名單最新)
+    const myUserUnsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+       if (docSnap.exists()) {
+           setUserData(docSnap.data());
+           userDataRef.current = docSnap.data();
+       }
+    });
+
     const usersUnsub = onSnapshot(collection(db, "users"), (snapshot) => {
       const usersList = [];
       snapshot.forEach(d => { if (d.id !== user.uid) usersList.push({ id: d.id, ...d.data() }); });
       setAllUsers(usersList);
+      allUsersRef.current = usersList;
     });
 
     const roomsUnsub = onSnapshot(collection(db, "chatrooms"), (snapshot) => {
@@ -131,14 +147,21 @@ export default function App() {
           const data = change.doc.data();
           if (data.members && data.members.includes(user.uid)) {
             if (data.lastMessageSenderId && data.lastMessageSenderId !== user.uid) {
-              if (currentRoomIdRef.current !== change.doc.id || document.hidden) {
-                if ("Notification" in window && Notification.permission === "granted") {
-                  const titleName = data.type === 'group' ? data.name : data.lastMessageSenderName;
-                  new Notification(`來自 ${titleName} 的新訊息`, {
-                    body: data.lastMessage,
-                    icon: data.photoURL || '/vite.svg'
-                  });
-                }
+              
+              // 【核心限制】：雙向通知阻擋
+              const myBlockList = userDataRef.current?.blockedUsers || [];
+              const usersWhoBlockedMe = allUsersRef.current.filter(u => u.blockedUsers?.includes(user.uid)).map(u => u.id);
+              
+              if (!myBlockList.includes(data.lastMessageSenderId) && !usersWhoBlockedMe.includes(data.lastMessageSenderId)) {
+                  if (currentRoomIdRef.current !== change.doc.id || document.hidden) {
+                    if ("Notification" in window && Notification.permission === "granted") {
+                      const titleName = data.type === 'group' ? data.name : data.lastMessageSenderName;
+                      new Notification(`來自 ${titleName} 的新訊息`, {
+                        body: data.lastMessage,
+                        icon: data.photoURL || '/vite.svg'
+                      });
+                    }
+                  }
               }
             }
           }
@@ -160,8 +183,8 @@ export default function App() {
       });
     });
 
-    return () => { usersUnsub(); roomsUnsub(); };
-  }, [user]);
+    return () => { usersUnsub(); roomsUnsub(); myUserUnsub(); };
+  }, [user]); 
 
   useEffect(() => {
     shouldAutoScroll.current = true;
@@ -292,7 +315,6 @@ export default function App() {
         isEdited: true
       });
       
-      // 【修改】: 編輯訊息後，如果是最後一則訊息，也要更新房間列表的最後訊息
       if (messages.length > 0 && messages[messages.length - 1].id === editingMsgId) {
          await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
             lastMessage: editMsgText.trim()
@@ -306,12 +328,9 @@ export default function App() {
   const handleUnsendMessage = async (msg) => {
     if (!window.confirm("確定要收回這則訊息嗎？")) return;
     try {
-      // 1. 刪除該則訊息
       await deleteDoc(doc(db, `chatrooms/${currentRoom.id}/messages`, msg.id));
       
-      // 2. 檢查這是不是最後一則訊息
       if (messages.length > 0 && messages[messages.length - 1].id === msg.id) {
-        // 如果是，去資料庫找「刪除後的」最後一則訊息
         const q = query(
            collection(db, `chatrooms/${currentRoom.id}/messages`), 
            orderBy("createdAt", "desc"), 
@@ -320,7 +339,6 @@ export default function App() {
         const querySnapshot = await getDocs(q);
         
         if (!querySnapshot.empty) {
-          // 如果還有其他訊息，把 lastMessage 更新為倒數第二則的內容
           const previousMsg = querySnapshot.docs[0].data();
           await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
             lastMessage: previousMsg.imageUrl ? '傳送了一張圖片' : previousMsg.text,
@@ -329,12 +347,11 @@ export default function App() {
             lastMessageTime: previousMsg.createdAt
           });
         } else {
-          // 如果全部刪光了，清空 lastMessage
           await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
             lastMessage: '',
             lastMessageSenderId: null,
             lastMessageSenderName: null,
-            lastMessageTime: Date.now() // 保持時間最新，讓房間還在列表最上方
+            lastMessageTime: Date.now() 
           });
         }
       }
@@ -352,6 +369,22 @@ export default function App() {
     }
     setSidebarTab('chats');
   };
+
+  // --- 封鎖功能邏輯 ---
+  const handleToggleBlockUser = async (targetUserId, targetUserName) => {
+    const isBlocked = userData?.blockedUsers?.includes(targetUserId);
+    const actionText = isBlocked ? "解除封鎖" : "封鎖";
+    if (!window.confirm(`確定要${actionText} ${targetUserName} 嗎？`)) return;
+    try {
+      const userRef = doc(db, "users", user.uid);
+      if (isBlocked) {
+        await updateDoc(userRef, { blockedUsers: arrayRemove(targetUserId) });
+      } else {
+        await updateDoc(userRef, { blockedUsers: arrayUnion(targetUserId) });
+      }
+    } catch (err) { alert(`${actionText}失敗：${err.message}`); }
+  };
+
 
   const openGroupModal = (isInvite = false) => { setInviteMode(isInvite); setGroupName(''); setSelectedUsers([]); setIsGroupModalOpen(true); };
   const toggleUserSelect = (userId) => setSelectedUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
@@ -400,7 +433,7 @@ export default function App() {
     try {
       if (isRegistering) {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await setDoc(doc(db, "users", cred.user.uid), { email: cred.user.email, username: email.split('@')[0], address: '', phone: '', photoURL: '', createdAt: Date.now() });
+        await setDoc(doc(db, "users", cred.user.uid), { email: cred.user.email, username: email.split('@')[0], address: '', phone: '', photoURL: '', blockedUsers: [], createdAt: Date.now() });
       } else { await signInWithEmailAndPassword(auth, email, password); }
     } catch (err) { if (err.code === 'auth/invalid-credential') setError('帳號或密碼錯誤！'); else setError("認證錯誤：" + err.message); }
   };
@@ -410,7 +443,7 @@ export default function App() {
       const result = await signInWithPopup(auth, provider);
       const userRef = doc(db, "users", result.user.uid);
       const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) await setDoc(userRef, { email: result.user.email, username: result.user.displayName || result.user.email.split('@')[0], photoURL: result.user.photoURL || '', address: '', phone: '', createdAt: Date.now() });
+      if (!userSnap.exists()) await setDoc(userRef, { email: result.user.email, username: result.user.displayName || result.user.email.split('@')[0], photoURL: result.user.photoURL || '', address: '', phone: '', blockedUsers: [], createdAt: Date.now() });
     } catch (err) { setError('Google 登入失敗：' + err.message); }
   };
   const handleSaveProfile = async (e) => {
@@ -419,12 +452,8 @@ export default function App() {
     setUserData(prev => ({...prev, ...profileForm})); setIsProfileOpen(false); 
   };
 
-  const filteredMessages = messages.filter(msg => 
-    msg.text?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    msg.senderName?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
-  // ================= 渲染畫面 =================
+  // ================= 渲染前處理過濾條件 (雙向封鎖核心邏輯) =================
   if (!user || !userData) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
@@ -448,6 +477,40 @@ export default function App() {
       </div>
     );
   }
+
+  // 1. 我封鎖的人
+  const blockedUserIds = userData?.blockedUsers || [];
+  // 2. 封鎖我的人
+  const usersWhoBlockedMe = allUsers.filter(u => u.blockedUsers?.includes(user.uid)).map(u => u.id);
+  // 3. 聯集 (雙向封鎖名單)：只要雙方任一方發動封鎖，就進入互相限制的狀態
+  const mutualBlockedIds = [...new Set([...blockedUserIds, ...usersWhoBlockedMe])];
+
+  // 【核心限制】：過濾訊息，隱藏互相封鎖用戶的訊息 (包含在群組中)
+  const filteredMessages = messages.filter(msg => {
+    if (msg.senderId === 'system') return true;
+    if (mutualBlockedIds.includes(msg.senderId)) return false; // 在任何聊天室，雙方都看不到彼此的訊息
+    
+    return msg.text?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+           msg.senderName?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  // 判斷當前私訊對象的封鎖狀態
+  let isCurrentChatBlockedByMe = false;
+  let isCurrentChatBlockedByThem = false;
+  let currentChatOtherId = null;
+  if (currentRoom?.type === 'private') {
+      currentChatOtherId = currentRoom.members.find(id => id !== user.uid);
+      if (blockedUserIds.includes(currentChatOtherId)) isCurrentChatBlockedByMe = true;
+      if (usersWhoBlockedMe.includes(currentChatOtherId)) isCurrentChatBlockedByThem = true;
+  }
+  const isCurrentChatBlocked = isCurrentChatBlockedByMe || isCurrentChatBlockedByThem;
+
+  // 定義可用來邀請的對象（排除互相封鎖的人、與已經在群組的人）
+  const availableUsersToInvite = allUsers.filter(u => {
+    if (mutualBlockedIds.includes(u.id)) return false; 
+    if (inviteMode && currentRoom && currentRoom.members.includes(u.id)) return false; 
+    return true;
+  });
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans">
@@ -498,8 +561,16 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto">
           {sidebarTab === 'chats' ? (
-            chatrooms.length > 0 ? chatrooms.map(room => (
-              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''}`}>
+            chatrooms.length > 0 ? chatrooms.map(room => {
+              // 雙向封鎖都會導致左側聊天室反灰
+              let isMuted = false;
+              if(room.type === 'private') {
+                  const oid = room.members.find(id => id !== user.uid);
+                  if (mutualBlockedIds.includes(oid)) isMuted = true;
+              }
+
+              return (
+              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''} ${isMuted ? 'opacity-50' : ''}`}>
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
                   {getRoomPhoto(room) ? (
                     <img src={getRoomPhoto(room)} className="w-full h-full object-cover" alt="avatar" />
@@ -510,11 +581,11 @@ export default function App() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-800 truncate">{getRoomName(room)}</h3>
-                  <p className="text-sm text-gray-500 truncate mt-1">{room.lastMessage || '尚無訊息'}</p>
+                  <h3 className="font-bold text-gray-800 truncate">{getRoomName(room)} {isMuted && <span className="text-xs text-red-500 ml-1">(受限制)</span>}</h3>
+                  <p className="text-sm text-gray-500 truncate mt-1">{isMuted ? '訊息已隱藏' : (room.lastMessage || '尚無訊息')}</p>
                 </div>
               </div>
-            )) : <div className="p-6 text-center text-gray-400 mt-10">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
+            )}) : <div className="p-6 text-center text-gray-400 mt-10">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
           ) : (
             <>
               <div className="p-4 border-b">
@@ -523,8 +594,11 @@ export default function App() {
                   建立新群組
                 </button>
               </div>
-              {allUsers.length > 0 ? allUsers.map(u => (
-                <div key={u.id} className="p-4 border-b flex items-center justify-between hover:bg-gray-50">
+              {allUsers.length > 0 ? allUsers.map(u => {
+                // 這裡的紅底按鈕，只針對「我主動封鎖」的用戶顯示
+                const isBlockedByMe = blockedUserIds.includes(u.id);
+                return (
+                <div key={u.id} className={`p-4 border-b flex items-center justify-between hover:bg-gray-50 ${isBlockedByMe ? 'bg-red-50/30' : ''}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                       {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500">{u.username[0].toUpperCase()}</span>}
@@ -534,9 +608,17 @@ export default function App() {
                       <p className="text-xs text-gray-500 truncate">{u.email}</p>
                     </div>
                   </div>
-                  <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
+                  <div className="flex gap-2">
+                    <button 
+                       onClick={() => handleToggleBlockUser(u.id, u.username)} 
+                       className={`px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm flex-shrink-0 ${isBlockedByMe ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                       {isBlockedByMe ? '解除封鎖' : '封鎖'}
+                    </button>
+                    <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
+                  </div>
                 </div>
-              )) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
+              )}) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
             </>
           )}
         </div>
@@ -560,14 +642,28 @@ export default function App() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h2 className="text-lg font-bold text-gray-800 leading-tight truncate">
-                    {getRoomName(currentRoom)} {currentRoom.type === 'group' && <span className="text-xs text-blue-500 ml-1">✎ 編輯</span>}
+                    {getRoomName(currentRoom)} 
+                    {currentRoom.type === 'group' && <span className="text-xs text-blue-500 ml-1">✎ 編輯</span>}
                   </h2>
-                  <p className="text-xs text-gray-500">{currentRoom.members?.length || 0} 位成員</p>
+                  <p className="text-xs text-gray-500">
+                    {currentRoom.type === 'private' && isCurrentChatBlocked 
+                       ? <span className="text-red-500 font-bold">對話受到限制</span> 
+                       : `${currentRoom.members?.length || 0} 位成員`}
+                  </p>
                 </div>
               </div>
               
               <div className="flex items-center gap-2">
-                <div className="relative">
+                {currentRoom.type === 'private' && (
+                  <button 
+                    onClick={() => handleToggleBlockUser(currentChatOtherId, getRoomName(currentRoom))}
+                    className={`p-2 rounded-full transition flex-shrink-0 text-xs font-bold ${isCurrentChatBlockedByMe ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  >
+                    {isCurrentChatBlockedByMe ? '解除封鎖' : '封鎖'}
+                  </button>
+                )}
+                
+                <div className="relative hidden sm:block">
                   <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋訊息..." className="w-32 md:w-48 pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
                   <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
@@ -657,11 +753,27 @@ export default function App() {
               {searchQuery && filteredMessages.length === 0 && (
                  <div className="text-center text-gray-400 mt-10 text-sm">找不到包含「{searchQuery}」的訊息</div>
               )}
+
+              {/* 【新增】：依據雙向封鎖狀態給予不同提示 */}
+              {isCurrentChatBlockedByMe && (
+                  <div className="text-center mt-6">
+                      <span className="bg-red-50 text-red-500 font-bold px-4 py-2 rounded-full text-sm">
+                          您已封鎖此用戶，無法接收其訊息。
+                      </span>
+                  </div>
+              )}
+              {isCurrentChatBlockedByThem && !isCurrentChatBlockedByMe && (
+                  <div className="text-center mt-6">
+                      <span className="bg-gray-100 text-gray-500 font-bold px-4 py-2 rounded-full text-sm">
+                          此對話已被限制，無法傳送訊息。
+                      </span>
+                  </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
             <div className="bg-white border-t flex flex-col relative">
-              {replyingTo && (
+              {replyingTo && !isCurrentChatBlocked && (
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm">
                    <div className="flex-1 truncate mr-4">
                      <span className="font-bold text-blue-600 mr-2">回覆 {replyingTo.senderName} :</span>
@@ -671,7 +783,7 @@ export default function App() {
                 </div>
               )}
 
-              {selectedImage && (
+              {selectedImage && !isCurrentChatBlocked && (
                 <div className="p-3 bg-gray-50 flex items-center justify-between border-b border-gray-100 mt-2 mx-4 rounded-xl border">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-200 rounded overflow-hidden">
@@ -684,10 +796,10 @@ export default function App() {
               )}
               
               <form onSubmit={handleSendMessage} className="p-3 md:p-4 flex gap-2 items-end">
-                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" disabled={isUploading} />
+                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" disabled={isUploading || isCurrentChatBlocked} />
                 <button 
-                  type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-                  className="bg-gray-100 text-gray-500 p-3 rounded-full hover:bg-gray-200 transition w-12 h-12 flex items-center justify-center flex-shrink-0 disabled:opacity-50" title="傳送圖片 (最大1MB)"
+                  type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading || isCurrentChatBlocked}
+                  className={`bg-gray-100 p-3 rounded-full transition w-12 h-12 flex items-center justify-center flex-shrink-0 ${isCurrentChatBlocked ? 'opacity-30 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-200'}`} title="傳送圖片 (最大1MB)"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 </button>
@@ -698,13 +810,13 @@ export default function App() {
                    </div>
                 ) : (
                   <input 
-                    type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} disabled={isUploading}
-                    placeholder="輸入訊息..." 
-                    className="flex-1 p-3 bg-gray-100 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 px-6 h-12 disabled:opacity-50 disabled:bg-gray-50"
+                    type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} disabled={isUploading || isCurrentChatBlocked}
+                    placeholder={isCurrentChatBlocked ? "無法傳送訊息給此用戶" : "輸入訊息..."} 
+                    className="flex-1 p-3 bg-gray-100 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 px-6 h-12 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                 )}
                 
-                <button type="submit" disabled={(!newMessage.trim() && !selectedImage) || isUploading} className="bg-blue-600 text-white p-3 rounded-full font-bold hover:bg-blue-700 disabled:bg-gray-300 transition w-12 h-12 flex items-center justify-center shadow-md flex-shrink-0">
+                <button type="submit" disabled={(!newMessage.trim() && !selectedImage) || isUploading || isCurrentChatBlocked} className={`text-white p-3 rounded-full font-bold transition w-12 h-12 flex items-center justify-center shadow-md flex-shrink-0 ${isCurrentChatBlocked ? 'bg-gray-300 opacity-50 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300'}`}>
                   {isUploading ? <span className="animate-spin text-lg">⏳</span> : '➤'}
                 </button>
               </form>
