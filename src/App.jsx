@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
-  collection, onSnapshot, addDoc, arrayUnion, query, orderBy, limit, getDocs, arrayRemove
+  collection, onSnapshot, addDoc, arrayUnion, query, orderBy, limit, getDocs, arrayRemove, deleteField
 } from 'firebase/firestore';
 
 // --- 1. Firebase 初始化 ---
@@ -24,6 +24,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// 定義可用的表情符號
+const EMOJI_LIST = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -48,11 +51,12 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   
-  // 訊息操作狀態 (編輯與回覆)
+  // 訊息操作狀態 (編輯、回覆、表情)
   const [editingMsgId, setEditingMsgId] = useState(null); 
   const [editMsgText, setEditMsgText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null); 
   const [highlightedMsgId, setHighlightedMsgId] = useState(null); 
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null); // 控制表情選擇器在哪則訊息展開
   
   // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +68,6 @@ export default function App() {
   const shouldAutoScroll = useRef(true);
   const currentRoomIdRef = useRef(null);
   
-  // 【新增】：使用 Ref 同步狀態，供 useEffect 內的非同步通知邏輯使用
   const userDataRef = useRef(null);
   const allUsersRef = useRef([]);
 
@@ -82,7 +85,7 @@ export default function App() {
       if (!currentUser) {
         setUserData(null); setAllUsers([]); setChatrooms([]);
         setCurrentRoom(null); setMessages([]); setEmail(''); setPassword('');
-        setSearchQuery(''); setSelectedImage(null); setReplyingTo(null);
+        setSearchQuery(''); setSelectedImage(null); setReplyingTo(null); setReactionPickerMsgId(null);
       }
     });
     return () => unsubscribe();
@@ -124,7 +127,6 @@ export default function App() {
     };
     fetchUserData();
 
-    // 監聽自己的資料更新 (確保封鎖名單最新)
     const myUserUnsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
        if (docSnap.exists()) {
            setUserData(docSnap.data());
@@ -145,10 +147,11 @@ export default function App() {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "modified") {
           const data = change.doc.data();
+          // 【隱藏歷史 AI 對話】：如果是跟機器人的對話，直接忽略它不跳通知
+          if (data.members && data.members.includes('gemini-bot-id')) return;
+
           if (data.members && data.members.includes(user.uid)) {
             if (data.lastMessageSenderId && data.lastMessageSenderId !== user.uid) {
-              
-              // 【核心限制】：雙向通知阻擋
               const myBlockList = userDataRef.current?.blockedUsers || [];
               const usersWhoBlockedMe = allUsersRef.current.filter(u => u.blockedUsers?.includes(user.uid)).map(u => u.id);
               
@@ -170,7 +173,10 @@ export default function App() {
 
       snapshot.forEach(d => {
         const data = d.data();
-        if (data.members && data.members.includes(user.uid)) roomsList.push({ id: d.id, ...data });
+        // 【隱藏歷史 AI 對話】：只收集沒有包含機器人的房間
+        if (data.members && data.members.includes(user.uid) && !data.members.includes('gemini-bot-id')) {
+           roomsList.push({ id: d.id, ...data });
+        }
       });
       
       roomsList.sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
@@ -178,6 +184,8 @@ export default function App() {
       
       setCurrentRoom(prevRoom => {
         if (!prevRoom) return null;
+        // 如果前一個房間是跟機器人的對話，切換後清空它
+        if (prevRoom.members && prevRoom.members.includes('gemini-bot-id')) return null;
         const updatedRoom = roomsList.find(r => r.id === prevRoom.id);
         return updatedRoom || prevRoom;
       });
@@ -210,6 +218,7 @@ export default function App() {
     e.preventDefault();
     if ((!newMessage.trim() && !selectedImage) || !currentRoom || isUploading) return;
 
+    const msgText = newMessage.trim();
     setIsUploading(true);
     shouldAutoScroll.current = true;
 
@@ -229,47 +238,28 @@ export default function App() {
         });
 
         await addDoc(collection(db, `chatrooms/${currentRoom.id}/messages`), {
-          text: '', 
-          imageUrl: base64String, 
-          senderId: user.uid, 
-          senderName: userData.username,
-          senderPhoto: userData.photoURL || '', 
-          createdAt: Date.now(),
-          isEdited: false,
-          replyTo: replyData 
+          text: '', imageUrl: base64String, senderId: user.uid, senderName: userData.username,
+          senderPhoto: userData.photoURL || '', createdAt: Date.now(), isEdited: false, replyTo: replyData, reactions: {} 
         });
 
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
-          lastMessage: '傳送了一張圖片', 
-          lastMessageTime: Date.now(),
-          lastMessageSenderId: user.uid,
-          lastMessageSenderName: userData.username
+          lastMessage: '傳送了一張圖片', lastMessageTime: Date.now(),
+          lastMessageSenderId: user.uid, lastMessageSenderName: userData.username
         });
-
-        setSelectedImage(null);
-        setNewMessage(''); 
       } else {
         await addDoc(collection(db, `chatrooms/${currentRoom.id}/messages`), {
-          text: newMessage.trim(), 
-          imageUrl: '', 
-          senderId: user.uid, 
-          senderName: userData.username,
-          senderPhoto: userData.photoURL || '', 
-          createdAt: Date.now(),
-          isEdited: false,
-          replyTo: replyData 
+          text: msgText, imageUrl: '', senderId: user.uid, senderName: userData.username,
+          senderPhoto: userData.photoURL || '', createdAt: Date.now(), isEdited: false, replyTo: replyData, reactions: {}
         });
 
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
-          lastMessage: newMessage.trim(), 
-          lastMessageTime: Date.now(),
-          lastMessageSenderId: user.uid,
-          lastMessageSenderName: userData.username
+          lastMessage: msgText, lastMessageTime: Date.now(),
+          lastMessageSenderId: user.uid, lastMessageSenderName: userData.username
         });
-
-        setNewMessage('');
       }
 
+      setNewMessage(''); 
+      setSelectedImage(null);
       setReplyingTo(null);
 
     } catch (err) {
@@ -287,6 +277,24 @@ export default function App() {
         return;
       }
       setSelectedImage(e.target.files[0]);
+    }
+  };
+
+  // --- 處理加入/取消表情符號 ---
+  const handleReaction = async (msgId, emoji, currentReactions) => {
+    if (!currentRoom) return;
+    try {
+      const msgRef = doc(db, `chatrooms/${currentRoom.id}/messages`, msgId);
+      // 如果該用戶已經按過這個表情，就移除它；否則更新為這個表情
+      if (currentReactions && currentReactions[user.uid] === emoji) {
+        await updateDoc(msgRef, { [`reactions.${user.uid}`]: deleteField() });
+      } else {
+        await updateDoc(msgRef, { [`reactions.${user.uid}`]: emoji });
+      }
+      setReactionPickerMsgId(null); // 關閉選擇器
+    } catch (err) {
+      console.error("表情更新失敗", err);
+      alert("表情更新失敗：" + err.message);
     }
   };
 
@@ -370,7 +378,6 @@ export default function App() {
     setSidebarTab('chats');
   };
 
-  // --- 封鎖功能邏輯 ---
   const handleToggleBlockUser = async (targetUserId, targetUserName) => {
     const isBlocked = userData?.blockedUsers?.includes(targetUserId);
     const actionText = isBlocked ? "解除封鎖" : "封鎖";
@@ -384,7 +391,6 @@ export default function App() {
       }
     } catch (err) { alert(`${actionText}失敗：${err.message}`); }
   };
-
 
   const openGroupModal = (isInvite = false) => { setInviteMode(isInvite); setGroupName(''); setSelectedUsers([]); setIsGroupModalOpen(true); };
   const toggleUserSelect = (userId) => setSelectedUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
@@ -452,8 +458,6 @@ export default function App() {
     setUserData(prev => ({...prev, ...profileForm})); setIsProfileOpen(false); 
   };
 
-
-  // ================= 渲染前處理過濾條件 (雙向封鎖核心邏輯) =================
   if (!user || !userData) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
@@ -478,23 +482,18 @@ export default function App() {
     );
   }
 
-  // 1. 我封鎖的人
   const blockedUserIds = userData?.blockedUsers || [];
-  // 2. 封鎖我的人
   const usersWhoBlockedMe = allUsers.filter(u => u.blockedUsers?.includes(user.uid)).map(u => u.id);
-  // 3. 聯集 (雙向封鎖名單)：只要雙方任一方發動封鎖，就進入互相限制的狀態
   const mutualBlockedIds = [...new Set([...blockedUserIds, ...usersWhoBlockedMe])];
 
-  // 【核心限制】：過濾訊息，隱藏互相封鎖用戶的訊息 (包含在群組中)
   const filteredMessages = messages.filter(msg => {
     if (msg.senderId === 'system') return true;
-    if (mutualBlockedIds.includes(msg.senderId)) return false; // 在任何聊天室，雙方都看不到彼此的訊息
+    if (mutualBlockedIds.includes(msg.senderId)) return false; 
     
     return msg.text?.toLowerCase().includes(searchQuery.toLowerCase()) || 
            msg.senderName?.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  // 判斷當前私訊對象的封鎖狀態
   let isCurrentChatBlockedByMe = false;
   let isCurrentChatBlockedByThem = false;
   let currentChatOtherId = null;
@@ -505,7 +504,6 @@ export default function App() {
   }
   const isCurrentChatBlocked = isCurrentChatBlockedByMe || isCurrentChatBlockedByThem;
 
-  // 定義可用來邀請的對象（排除互相封鎖的人、與已經在群組的人）
   const availableUsersToInvite = allUsers.filter(u => {
     if (mutualBlockedIds.includes(u.id)) return false; 
     if (inviteMode && currentRoom && currentRoom.members.includes(u.id)) return false; 
@@ -524,19 +522,9 @@ export default function App() {
           75% { transform: scale(1.05) rotate(-2deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
           100% { transform: scale(1) rotate(0deg); }
         }
-        .animate-pop-wobble {
-          animation: pop-wobble 1.2s ease-in-out;
-          z-index: 20;
-          position: relative;
-        }
-
-        @keyframes slide-in-bottom {
-          0% { opacity: 0; transform: translateY(15px); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
-        .animate-slide-in-bottom {
-          animation: slide-in-bottom 0.3s ease-out forwards;
-        }
+        .animate-pop-wobble { animation: pop-wobble 1.2s ease-in-out; z-index: 20; position: relative; }
+        @keyframes slide-in-bottom { 0% { opacity: 0; transform: translateY(15px); } 100% { opacity: 1; transform: translateY(0); } }
+        .animate-slide-in-bottom { animation: slide-in-bottom 0.3s ease-out forwards; }
       `}</style>
       
       {/* 左側 Sidebar */}
@@ -562,7 +550,6 @@ export default function App() {
         <div className="flex-1 overflow-y-auto">
           {sidebarTab === 'chats' ? (
             chatrooms.length > 0 ? chatrooms.map(room => {
-              // 雙向封鎖都會導致左側聊天室反灰
               let isMuted = false;
               if(room.type === 'private') {
                   const oid = room.members.find(id => id !== user.uid);
@@ -570,7 +557,7 @@ export default function App() {
               }
 
               return (
-              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''} ${isMuted ? 'opacity-50' : ''}`}>
+              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null); setReactionPickerMsgId(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''} ${isMuted ? 'opacity-50' : ''}`}>
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
                   {getRoomPhoto(room) ? (
                     <img src={getRoomPhoto(room)} className="w-full h-full object-cover" alt="avatar" />
@@ -594,8 +581,8 @@ export default function App() {
                   建立新群組
                 </button>
               </div>
-              {allUsers.length > 0 ? allUsers.map(u => {
-                // 這裡的紅底按鈕，只針對「我主動封鎖」的用戶顯示
+
+              {allUsers.length > 0 && allUsers.map(u => {
                 const isBlockedByMe = blockedUserIds.includes(u.id);
                 return (
                 <div key={u.id} className={`p-4 border-b flex items-center justify-between hover:bg-gray-50 ${isBlockedByMe ? 'bg-red-50/30' : ''}`}>
@@ -618,19 +605,19 @@ export default function App() {
                     <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
                   </div>
                 </div>
-              )}) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
+              )})}
             </>
           )}
         </div>
       </div>
 
       {/* 右側 聊天室主體 */}
-      <div className={`${!currentRoom ? 'hidden md:flex' : 'flex'} flex-col flex-1 bg-white relative`}>
+      <div className={`${!currentRoom ? 'hidden md:flex' : 'flex'} flex-col flex-1 bg-white relative`} onClick={() => setReactionPickerMsgId(null)}>
         {currentRoom ? (
           <>
             <div className="bg-white p-4 border-b flex items-center justify-between shadow-sm z-10">
               <div className="flex items-center flex-1 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition" onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
-                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); }} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">←</button>
+                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); setReactionPickerMsgId(null); }} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">←</button>
                 <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center overflow-hidden mr-3 flex-shrink-0">
                   {getRoomPhoto(currentRoom) ? (
                     <img src={getRoomPhoto(currentRoom)} className="w-full h-full object-cover" alt="avatar" />
@@ -687,27 +674,60 @@ export default function App() {
                   );
                 }
 
+                // 計算表情數量
+                const reactionCounts = {};
+                if (msg.reactions) {
+                   Object.entries(msg.reactions).forEach(([uid, emoji]) => {
+                      if (!reactionCounts[emoji]) reactionCounts[emoji] = { count: 0, me: false };
+                      reactionCounts[emoji].count += 1;
+                      if (uid === user.uid) reactionCounts[emoji].me = true;
+                   });
+                }
+
                 return (
-                  <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative animate-slide-in-bottom`}>
+                  <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative animate-slide-in-bottom mb-4`}>
                     {!isMe && (
                       <div className="w-8 h-8 rounded-full bg-gray-300 mr-2 flex-shrink-0 overflow-hidden flex items-center justify-center mt-1">
                         {msg.senderPhoto ? <img src={msg.senderPhoto} className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-white">{msg.senderName[0].toUpperCase()}</span>}
                       </div>
                     )}
                     
-                    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] transition-transform duration-300 ${isHighlighted ? 'animate-pop-wobble' : ''}`}>
+                    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] transition-transform duration-300 ${isHighlighted ? 'animate-pop-wobble' : ''} relative`}>
                       
-                      <div className={`flex gap-2 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-4 ${isMe ? 'right-2' : 'left-10'} bg-white shadow-sm border border-gray-200 rounded-lg px-2 py-1 z-10`}>
-                        <button onClick={() => setReplyingTo(msg)} className="text-xs text-gray-500 hover:text-blue-600 font-bold">回覆</button>
-                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className="text-xs text-blue-600 hover:text-blue-800 font-bold">編輯</button>}
-                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className="text-xs text-red-500 hover:text-red-700 font-bold">收回</button>}
+                      {/* 操作選單：新增了表情按鈕 */}
+                      <div className={`flex gap-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5 ${isMe ? 'right-0' : 'left-0'} bg-white shadow-sm border border-gray-200 rounded-lg px-1.5 py-1 z-20`}>
+                        <button 
+                           onClick={(e) => { e.stopPropagation(); setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id); }} 
+                           className="text-xs px-1 text-gray-500 hover:text-blue-600 transition hover:scale-110" title="加入表情"
+                        >
+                          😀
+                        </button>
+                        <button onClick={() => setReplyingTo(msg)} className="text-xs px-1 text-gray-500 hover:text-blue-600 font-bold">回覆</button>
+                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className="text-xs px-1 text-blue-600 hover:text-blue-800 font-bold">編輯</button>}
+                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className="text-xs px-1 text-red-500 hover:text-red-700 font-bold">收回</button>}
                       </div>
 
+                      {/* 彈出表情選擇器 */}
+                      {reactionPickerMsgId === msg.id && (
+                        <div className={`absolute -top-14 ${isMe ? 'right-0' : 'left-0'} bg-white shadow-lg border border-gray-100 rounded-full px-3 py-2 flex gap-2 z-30 animate-slide-in-bottom`}>
+                          {EMOJI_LIST.map(emoji => (
+                             <button 
+                                key={emoji} 
+                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }}
+                                className="text-lg hover:scale-125 transition-transform origin-bottom"
+                             >
+                               {emoji}
+                             </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 訊息本體 */}
                       {msg.imageUrl ? (
                         <div className={`rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : 'border-black/5'} transition-all`}>
                            {msg.replyTo && (
                              <div 
-                               onClick={() => scrollToMessage(msg.replyTo.id)}
+                               onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
                                className="bg-black/80 text-white p-2 text-xs cursor-pointer hover:bg-black border-b border-white/20 transition flex flex-col"
                              >
                                <span className="font-bold text-blue-300">{msg.replyTo.senderName}</span>
@@ -722,7 +742,7 @@ export default function App() {
                           
                           {msg.replyTo && (
                             <div 
-                              onClick={() => scrollToMessage(msg.replyTo.id)}
+                              onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
                               className={`rounded p-2 mb-2 text-xs cursor-pointer transition flex flex-col border-l-4 ${isMe ? 'bg-white/20 hover:bg-white/30 border-blue-200' : 'bg-gray-100 hover:bg-gray-200 border-blue-400'}`}
                             >
                               <span className="font-bold font-sans opacity-90">{msg.replyTo.senderName}</span>
@@ -734,7 +754,7 @@ export default function App() {
                             <div className="flex flex-col gap-2 min-w-[200px]">
                               <input type="text" value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)} className="text-black px-2 py-1 rounded text-sm w-full outline-none" autoFocus />
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => setEditingMsgId(null)} className="text-xs opacity-80 hover:opacity-100">取消</button>
+                                <button onClick={(e) => { e.stopPropagation(); setEditingMsgId(null); }} className="text-xs opacity-80 hover:opacity-100">取消</button>
                                 <button onClick={saveEditedMessage} className="text-xs font-bold bg-white text-blue-600 px-2 py-1 rounded">儲存</button>
                               </div>
                             </div>
@@ -746,6 +766,23 @@ export default function App() {
                           )}
                         </div>
                       )}
+
+                      {/* 表情顯示區塊 (顯示在訊息泡泡下方重疊) */}
+                      {Object.keys(reactionCounts).length > 0 && (
+                        <div className={`absolute -bottom-4 flex gap-1 ${isMe ? 'right-2 flex-row-reverse' : 'left-2'} z-10`}>
+                          {Object.entries(reactionCounts).map(([emoji, data]) => (
+                            <button 
+                               key={emoji}
+                               onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }}
+                               className={`flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm transition hover:scale-105 ${data.me ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600'}`}
+                            >
+                               <span>{emoji}</span>
+                               {data.count > 1 && <span>{data.count}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                     </div>
                   </div>
                 );
@@ -753,8 +790,6 @@ export default function App() {
               {searchQuery && filteredMessages.length === 0 && (
                  <div className="text-center text-gray-400 mt-10 text-sm">找不到包含「{searchQuery}」的訊息</div>
               )}
-
-              {/* 【新增】：依據雙向封鎖狀態給予不同提示 */}
               {isCurrentChatBlockedByMe && (
                   <div className="text-center mt-6">
                       <span className="bg-red-50 text-red-500 font-bold px-4 py-2 rounded-full text-sm">
@@ -772,7 +807,7 @@ export default function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="bg-white border-t flex flex-col relative">
+            <div className="bg-white border-t flex flex-col relative" onClick={(e) => e.stopPropagation()}>
               {replyingTo && !isCurrentChatBlocked && (
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm">
                    <div className="flex-1 truncate mr-4">
