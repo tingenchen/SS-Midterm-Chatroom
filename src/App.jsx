@@ -33,38 +33,34 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
   
-  // Profile
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({ username: '', email: '', phone: '', address: '', photoURL: '' });
   
-  // 核心資料狀態
   const [allUsers, setAllUsers] = useState([]); 
   const [chatrooms, setChatrooms] = useState([]); 
   const [currentRoom, setCurrentRoom] = useState(null); 
   const [messages, setMessages] = useState([]); 
   
-  // 訊息輸入區狀態
   const [newMessage, setNewMessage] = useState(''); 
   const [selectedImage, setSelectedImage] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   
-  // 訊息操作狀態 (編輯與回覆)
   const [editingMsgId, setEditingMsgId] = useState(null); 
   const [editMsgText, setEditMsgText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null); 
   const [highlightedMsgId, setHighlightedMsgId] = useState(null); 
   
-  // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
 
   const [sidebarTab, setSidebarTab] = useState('chats'); 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // 【新增】紀錄是否是初次載入房間，或是自己剛發送訊息
   const shouldAutoScroll = useRef(true);
+  
+  // 【新增】：使用 useRef 追蹤當前房間 ID，以供監聽器正確判斷是否要發送通知
+  const currentRoomIdRef = useRef(null);
 
-  // --- 群組狀態 ---
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [inviteMode, setInviteMode] = useState(false); 
   const [groupName, setGroupName] = useState('');
@@ -84,8 +80,19 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 【新增】：隨時將當前房間 ID 同步給 Ref
+  useEffect(() => {
+    currentRoomIdRef.current = currentRoom?.id || null;
+  }, [currentRoom]);
+
   useEffect(() => {
     if (!user) return; 
+
+    // 【新增】：向瀏覽器請求通知權限
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
     const fetchUserData = async () => {
       try {
         const userDocRef = doc(db, "users", user.uid);
@@ -116,10 +123,34 @@ export default function App() {
 
     const roomsUnsub = onSnapshot(collection(db, "chatrooms"), (snapshot) => {
       const roomsList = [];
+      
+      // 【新增】：檢查到底有哪些房間被「修改」了 (代表有新訊息)
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "modified") {
+          const data = change.doc.data();
+          if (data.members && data.members.includes(user.uid)) {
+            // 確認最後一則訊息是「別人」傳的
+            if (data.lastMessageSenderId && data.lastMessageSenderId !== user.uid) {
+              // 確認自己「不在這個房間內」或「網頁切到背景」時，才跳通知
+              if (currentRoomIdRef.current !== change.doc.id || document.hidden) {
+                if ("Notification" in window && Notification.permission === "granted") {
+                  const titleName = data.type === 'group' ? data.name : data.lastMessageSenderName;
+                  new Notification(`來自 ${titleName} 的新訊息`, {
+                    body: data.lastMessage,
+                    icon: data.photoURL || '/vite.svg'
+                  });
+                }
+              }
+            }
+          }
+        }
+      });
+
       snapshot.forEach(d => {
         const data = d.data();
         if (data.members && data.members.includes(user.uid)) roomsList.push({ id: d.id, ...data });
       });
+      
       roomsList.sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
       setChatrooms(roomsList);
       
@@ -133,7 +164,6 @@ export default function App() {
     return () => { usersUnsub(); roomsUnsub(); };
   }, [user]);
 
-  // 切換房間時，允許自動滾動
   useEffect(() => {
     shouldAutoScroll.current = true;
   }, [currentRoom?.id]);
@@ -146,23 +176,19 @@ export default function App() {
       msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       setMessages(msgs);
       
-      // 【修改滾動邏輯】只有在被允許時才滾動
       if (shouldAutoScroll.current && !searchQuery) {
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-        // 初始滾動完後，關閉自動滾動，直到使用者發出新訊息
         setTimeout(() => { shouldAutoScroll.current = false; }, 300);
       }
     });
     return () => messagesUnsub();
   }, [currentRoom?.id, searchQuery]);
 
-  // --- 發送訊息 ---
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if ((!newMessage.trim() && !selectedImage) || !currentRoom || isUploading) return;
 
     setIsUploading(true);
-    // 【新增】自己發送訊息時，強制允許捲動到底部
     shouldAutoScroll.current = true;
 
     const replyData = replyingTo ? {
@@ -191,9 +217,12 @@ export default function App() {
           replyTo: replyData 
         });
 
+        // 【修改】：寫入 lastMessageSenderId 以供通知系統判斷
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
           lastMessage: '傳送了一張圖片', 
-          lastMessageTime: Date.now() 
+          lastMessageTime: Date.now(),
+          lastMessageSenderId: user.uid,
+          lastMessageSenderName: userData.username
         });
 
         setSelectedImage(null);
@@ -210,9 +239,12 @@ export default function App() {
           replyTo: replyData 
         });
 
+        // 【修改】：寫入 lastMessageSenderId 以供通知系統判斷
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
           lastMessage: newMessage.trim(), 
-          lastMessageTime: Date.now() 
+          lastMessageTime: Date.now(),
+          lastMessageSenderId: user.uid,
+          lastMessageSenderName: userData.username
         });
 
         setNewMessage('');
@@ -238,11 +270,8 @@ export default function App() {
     }
   };
 
-  // --- 點擊回覆並捲動至特定訊息並播放動畫 ---
   const scrollToMessage = (msgId) => {
-    // 【新增】點擊跳轉時，關閉自動捲動到底部
     shouldAutoScroll.current = false;
-    
     const element = document.getElementById(`msg-${msgId}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
