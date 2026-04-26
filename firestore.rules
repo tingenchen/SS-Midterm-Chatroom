@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /posts/{document=**} {
+      // 允許讀取和寫入的條件：請求者的授權 (request.auth) 不為空 (已登入)
+      allow read, write: if request.auth != null;
+    }
+  }
+}
