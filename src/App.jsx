@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
-  collection, onSnapshot, addDoc, arrayUnion 
+  collection, onSnapshot, addDoc, arrayUnion, query, orderBy, limit, getDocs 
 } from 'firebase/firestore';
 
 // --- 1. Firebase 初始化 ---
@@ -33,23 +33,28 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
   
+  // Profile
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({ username: '', email: '', phone: '', address: '', photoURL: '' });
   
+  // 核心資料狀態
   const [allUsers, setAllUsers] = useState([]); 
   const [chatrooms, setChatrooms] = useState([]); 
   const [currentRoom, setCurrentRoom] = useState(null); 
   const [messages, setMessages] = useState([]); 
   
+  // 訊息輸入區狀態
   const [newMessage, setNewMessage] = useState(''); 
   const [selectedImage, setSelectedImage] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   
+  // 訊息操作狀態 (編輯與回覆)
   const [editingMsgId, setEditingMsgId] = useState(null); 
   const [editMsgText, setEditMsgText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null); 
   const [highlightedMsgId, setHighlightedMsgId] = useState(null); 
   
+  // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
 
   const [sidebarTab, setSidebarTab] = useState('chats'); 
@@ -57,10 +62,9 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   const shouldAutoScroll = useRef(true);
-  
-  // 【新增】：使用 useRef 追蹤當前房間 ID，以供監聽器正確判斷是否要發送通知
   const currentRoomIdRef = useRef(null);
 
+  // --- 群組狀態 ---
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [inviteMode, setInviteMode] = useState(false); 
   const [groupName, setGroupName] = useState('');
@@ -80,7 +84,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 【新增】：隨時將當前房間 ID 同步給 Ref
   useEffect(() => {
     currentRoomIdRef.current = currentRoom?.id || null;
   }, [currentRoom]);
@@ -88,7 +91,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return; 
 
-    // 【新增】：向瀏覽器請求通知權限
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
@@ -124,14 +126,11 @@ export default function App() {
     const roomsUnsub = onSnapshot(collection(db, "chatrooms"), (snapshot) => {
       const roomsList = [];
       
-      // 【新增】：檢查到底有哪些房間被「修改」了 (代表有新訊息)
       snapshot.docChanges().forEach((change) => {
         if (change.type === "modified") {
           const data = change.doc.data();
           if (data.members && data.members.includes(user.uid)) {
-            // 確認最後一則訊息是「別人」傳的
             if (data.lastMessageSenderId && data.lastMessageSenderId !== user.uid) {
-              // 確認自己「不在這個房間內」或「網頁切到背景」時，才跳通知
               if (currentRoomIdRef.current !== change.doc.id || document.hidden) {
                 if ("Notification" in window && Notification.permission === "granted") {
                   const titleName = data.type === 'group' ? data.name : data.lastMessageSenderName;
@@ -217,7 +216,6 @@ export default function App() {
           replyTo: replyData 
         });
 
-        // 【修改】：寫入 lastMessageSenderId 以供通知系統判斷
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
           lastMessage: '傳送了一張圖片', 
           lastMessageTime: Date.now(),
@@ -239,7 +237,6 @@ export default function App() {
           replyTo: replyData 
         });
 
-        // 【修改】：寫入 lastMessageSenderId 以供通知系統判斷
         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
           lastMessage: newMessage.trim(), 
           lastMessageTime: Date.now(),
@@ -294,6 +291,14 @@ export default function App() {
         text: editMsgText.trim(),
         isEdited: true
       });
+      
+      // 【修改】: 編輯訊息後，如果是最後一則訊息，也要更新房間列表的最後訊息
+      if (messages.length > 0 && messages[messages.length - 1].id === editingMsgId) {
+         await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
+            lastMessage: editMsgText.trim()
+         });
+      }
+      
       setEditingMsgId(null);
     } catch (err) { alert("編輯失敗：" + err.message); }
   };
@@ -301,7 +306,39 @@ export default function App() {
   const handleUnsendMessage = async (msg) => {
     if (!window.confirm("確定要收回這則訊息嗎？")) return;
     try {
+      // 1. 刪除該則訊息
       await deleteDoc(doc(db, `chatrooms/${currentRoom.id}/messages`, msg.id));
+      
+      // 2. 檢查這是不是最後一則訊息
+      if (messages.length > 0 && messages[messages.length - 1].id === msg.id) {
+        // 如果是，去資料庫找「刪除後的」最後一則訊息
+        const q = query(
+           collection(db, `chatrooms/${currentRoom.id}/messages`), 
+           orderBy("createdAt", "desc"), 
+           limit(1)
+        );
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          // 如果還有其他訊息，把 lastMessage 更新為倒數第二則的內容
+          const previousMsg = querySnapshot.docs[0].data();
+          await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
+            lastMessage: previousMsg.imageUrl ? '傳送了一張圖片' : previousMsg.text,
+            lastMessageSenderId: previousMsg.senderId,
+            lastMessageSenderName: previousMsg.senderName,
+            lastMessageTime: previousMsg.createdAt
+          });
+        } else {
+          // 如果全部刪光了，清空 lastMessage
+          await updateDoc(doc(db, "chatrooms", currentRoom.id), { 
+            lastMessage: '',
+            lastMessageSenderId: null,
+            lastMessageSenderName: null,
+            lastMessageTime: Date.now() // 保持時間最新，讓房間還在列表最上方
+          });
+        }
+      }
+      
     } catch (err) { alert("收回失敗：" + err.message); }
   };
 
@@ -429,6 +466,14 @@ export default function App() {
           z-index: 20;
           position: relative;
         }
+
+        @keyframes slide-in-bottom {
+          0% { opacity: 0; transform: translateY(15px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-in-bottom {
+          animation: slide-in-bottom 0.3s ease-out forwards;
+        }
       `}</style>
       
       {/* 左側 Sidebar */}
@@ -547,7 +592,7 @@ export default function App() {
                 }
 
                 return (
-                  <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
+                  <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative animate-slide-in-bottom`}>
                     {!isMe && (
                       <div className="w-8 h-8 rounded-full bg-gray-300 mr-2 flex-shrink-0 overflow-hidden flex items-center justify-center mt-1">
                         {msg.senderPhoto ? <img src={msg.senderPhoto} className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-white">{msg.senderName[0].toUpperCase()}</span>}
