@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, 
-  collection, onSnapshot, addDoc 
+  collection, onSnapshot, addDoc, arrayUnion 
 } from 'firebase/firestore';
 
 // --- 1. Firebase 初始化 ---
@@ -33,8 +33,9 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
   
+  // Profile Modal
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({ username: '', phone: '', address: '', photoURL: '' });
+  const [profileForm, setProfileForm] = useState({ username: '', email: '', phone: '', address: '', photoURL: '' });
   
   const [allUsers, setAllUsers] = useState([]); 
   const [chatrooms, setChatrooms] = useState([]); 
@@ -44,17 +45,22 @@ export default function App() {
   const [sidebarTab, setSidebarTab] = useState('chats'); 
   const messagesEndRef = useRef(null);
 
+  // --- 群組/邀請狀態 ---
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState(false); 
+  const [groupName, setGroupName] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState([]);
+
+  // --- 編輯群組狀態 ---
+  const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
+  const [editGroupForm, setEditGroupForm] = useState({ name: '', photoURL: '' });
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
-        setUserData(null);
-        setAllUsers([]);
-        setChatrooms([]);
-        setCurrentRoom(null);
-        setMessages([]);
-        setEmail('');
-        setPassword('');
+        setUserData(null); setAllUsers([]); setChatrooms([]);
+        setCurrentRoom(null); setMessages([]); setEmail(''); setPassword('');
       }
     });
     return () => unsubscribe();
@@ -67,36 +73,30 @@ export default function App() {
       try {
         const userDocRef = doc(db, "users", user.uid);
         const userDoc = await getDoc(userDocRef);
-        
         if (userDoc.exists()) {
           setUserData(userDoc.data());
-          setProfileForm(userDoc.data());
+          setProfileForm({
+            username: userDoc.data().username || '',
+            email: userDoc.data().email || user.email, 
+            phone: userDoc.data().phone || '',
+            address: userDoc.data().address || '',
+            photoURL: userDoc.data().photoURL || ''
+          });
         } else {
           const defaultData = {
-            email: user.email,
-            username: user.displayName || user.email?.split('@')[0] || 'Unknown',
-            address: '',
-            phone: '',
-            photoURL: user.photoURL || '',
-            createdAt: Date.now()
+            email: user.email, username: user.displayName || user.email?.split('@')[0] || 'Unknown',
+            address: '', phone: '', photoURL: user.photoURL || '', createdAt: Date.now()
           };
           await setDoc(userDocRef, defaultData);
-          setUserData(defaultData);
-          setProfileForm(defaultData);
+          setUserData(defaultData); setProfileForm(defaultData);
         }
-      } catch (err) {
-        console.error("抓取個人資料失敗:", err);
-      }
+      } catch (err) { console.error("抓取個人資料失敗:", err); }
     };
     fetchUserData();
 
     const usersUnsub = onSnapshot(collection(db, "users"), (snapshot) => {
       const usersList = [];
-      snapshot.forEach(d => {
-        if (d.id !== user.uid) {
-          usersList.push({ id: d.id, ...d.data() });
-        }
-      });
+      snapshot.forEach(d => { if (d.id !== user.uid) usersList.push({ id: d.id, ...d.data() }); });
       setAllUsers(usersList);
     });
 
@@ -110,20 +110,21 @@ export default function App() {
       });
       roomsList.sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
       setChatrooms(roomsList);
+      
+      // 【修復重點】使用函數式更新，確保繞過閉包問題，拿到最新房間資料
+      setCurrentRoom(prevRoom => {
+        if (!prevRoom) return null;
+        const updatedRoom = roomsList.find(r => r.id === prevRoom.id);
+        return updatedRoom || prevRoom;
+      });
     });
 
-    return () => {
-      usersUnsub();
-      roomsUnsub();
-    };
+    return () => { usersUnsub(); roomsUnsub(); };
   }, [user]);
 
+  // 【修復重點】只依賴 currentRoom.id，避免改名字時重刷所有訊息
   useEffect(() => {
-    if (!currentRoom) {
-      setMessages([]);
-      return;
-    }
-
+    if (!currentRoom?.id) { setMessages([]); return; }
     const messagesUnsub = onSnapshot(collection(db, `chatrooms/${currentRoom.id}/messages`), (snapshot) => {
       const msgs = [];
       snapshot.forEach(d => msgs.push({ id: d.id, ...d.data() }));
@@ -131,26 +132,21 @@ export default function App() {
       setMessages(msgs);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     });
-
     return () => messagesUnsub();
-  }, [currentRoom]);
+  }, [currentRoom?.id]);
 
-  // --- 輔助函數 ---
+  // --- 一對一聊天邏輯 ---
   const startPrivateChat = async (targetUser) => {
     const existingRoom = chatrooms.find(room => 
-      room.type === 'private' && room.members.includes(targetUser.id)
+      room.type === 'private' && room.members.length === 2 && room.members.includes(targetUser.id)
     );
-
     if (existingRoom) {
       setCurrentRoom(existingRoom);
     } else {
       const newRoom = {
-        type: 'private',
-        members: [user.uid, targetUser.id],
+        type: 'private', members: [user.uid, targetUser.id],
         names: { [user.uid]: userData.username, [targetUser.id]: targetUser.username },
-        createdAt: Date.now(),
-        lastMessage: '',
-        lastMessageTime: Date.now()
+        createdAt: Date.now(), lastMessage: '', lastMessageTime: Date.now()
       };
       const docRef = await addDoc(collection(db, "chatrooms"), newRoom);
       setCurrentRoom({ id: docRef.id, ...newRoom });
@@ -158,45 +154,97 @@ export default function App() {
     setSidebarTab('chats');
   };
 
+  // --- 建立/邀請群組 ---
+  const openGroupModal = (isInvite = false) => {
+    setInviteMode(isInvite);
+    setGroupName('');
+    setSelectedUsers([]);
+    setIsGroupModalOpen(true);
+  };
+
+  const toggleUserSelect = (userId) => {
+    setSelectedUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+  };
+
+  const handleGroupSubmit = async () => {
+    if (selectedUsers.length === 0) return alert("請至少選擇一位成員！");
+
+    if (inviteMode && currentRoom) {
+      const updates = { members: arrayUnion(...selectedUsers) };
+      if (currentRoom.type === 'private') {
+        updates.type = 'group';
+        updates.name = `${userData.username} 發起的群組`;
+      }
+      await updateDoc(doc(db, "chatrooms", currentRoom.id), updates);
+      await addDoc(collection(db, `chatrooms/${currentRoom.id}/messages`), {
+        text: `${userData.username} 邀請了新成員加入`,
+        senderId: 'system', senderName: '系統', senderPhoto: '', createdAt: Date.now()
+      });
+    } else {
+      const newRoom = {
+        type: 'group',
+        name: groupName.trim() || `${userData.username} 發起的群組`,
+        photoURL: '', 
+        members: [user.uid, ...selectedUsers],
+        createdAt: Date.now(), lastMessage: '群組已建立', lastMessageTime: Date.now()
+      };
+      const docRef = await addDoc(collection(db, "chatrooms"), newRoom);
+      setCurrentRoom({ id: docRef.id, ...newRoom });
+      setSidebarTab('chats');
+    }
+    setIsGroupModalOpen(false);
+  };
+
+  // --- 編輯群組資料 ---
+  const openEditGroupModal = () => {
+    setEditGroupForm({
+      name: currentRoom.name || '',
+      photoURL: currentRoom.photoURL || ''
+    });
+    setIsEditGroupModalOpen(true);
+  };
+
+  const handleEditGroupSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, "chatrooms", currentRoom.id), {
+        name: editGroupForm.name,
+        photoURL: editGroupForm.photoURL
+      });
+      setIsEditGroupModalOpen(false);
+    } catch (err) {
+      alert("更新群組失敗：" + err.message);
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !currentRoom) return;
-
     const msgText = newMessage.trim();
     setNewMessage(''); 
-
     await addDoc(collection(db, `chatrooms/${currentRoom.id}/messages`), {
-      text: msgText,
-      senderId: user.uid,
-      senderName: userData.username,
-      senderPhoto: userData.photoURL || '',
-      createdAt: Date.now()
+      text: msgText, senderId: user.uid, senderName: userData.username,
+      senderPhoto: userData.photoURL || '', createdAt: Date.now()
     });
-
-    await updateDoc(doc(db, "chatrooms", currentRoom.id), {
-      lastMessage: msgText,
-      lastMessageTime: Date.now()
-    });
+    await updateDoc(doc(db, "chatrooms", currentRoom.id), { lastMessage: msgText, lastMessageTime: Date.now() });
   };
 
   const getRoomName = (room) => {
     if (room.type === 'private') {
       const otherId = room.members.find(id => id !== user.uid);
-      // 從 allUsers 中抓取最新的名稱，如果沒抓到才用備用的
       const otherUser = allUsers.find(u => u.id === otherId);
-      return otherUser ? otherUser.username : (room.names[otherId] || '未知用戶');
+      return otherUser ? otherUser.username : '未知用戶';
     }
     return room.name || '群組聊天';
   };
 
-  // 【新增】取得聊天室對方的頭貼
   const getRoomPhoto = (room) => {
     if (room.type === 'private') {
       const otherId = room.members.find(id => id !== user.uid);
       const otherUser = allUsers.find(u => u.id === otherId);
       return otherUser ? otherUser.photoURL : null;
     }
-    return null; // 未來群組聊天可以放預設群組圖片
+    return room.photoURL || null; 
   };
 
   const handleAuth = async (e) => {
@@ -205,12 +253,9 @@ export default function App() {
       if (isRegistering) {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await setDoc(doc(db, "users", cred.user.uid), {
-          email: cred.user.email, username: email.split('@')[0],
-          address: '', phone: '', photoURL: '', createdAt: Date.now()
+          email: cred.user.email, username: email.split('@')[0], address: '', phone: '', photoURL: '', createdAt: Date.now()
         });
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
-      }
+      } else { await signInWithEmailAndPassword(auth, email, password); }
     } catch (err) { 
       if (err.code === 'auth/invalid-credential') setError('帳號或密碼錯誤！');
       else setError("認證錯誤：" + err.message); 
@@ -218,33 +263,36 @@ export default function App() {
   };
 
   const handleGoogleSignIn = async () => {
-    const provider = new GoogleAuthProvider();
-    setError('');
+    const provider = new GoogleAuthProvider(); setError('');
     try {
       const result = await signInWithPopup(auth, provider);
       const userRef = doc(db, "users", result.user.uid);
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) {
         await setDoc(userRef, {
-          email: result.user.email,
-          username: result.user.displayName || result.user.email.split('@')[0],
-          photoURL: result.user.photoURL || '',
-          address: '',
-          phone: '',
-          createdAt: Date.now()
+          email: result.user.email, username: result.user.displayName || result.user.email.split('@')[0],
+          photoURL: result.user.photoURL || '', address: '', phone: '', createdAt: Date.now()
         });
       }
-    } catch (err) {
-      setError('Google 登入失敗：' + err.message);
-    }
+    } catch (err) { setError('Google 登入失敗：' + err.message); }
   };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    await updateDoc(doc(db, "users", user.uid), profileForm);
-    setUserData(prev => ({...prev, ...profileForm}));
+    await updateDoc(doc(db, "users", user.uid), {
+      username: profileForm.username,
+      email: profileForm.email,
+      phone: profileForm.phone,
+      address: profileForm.address,
+      photoURL: profileForm.photoURL
+    });
+    setUserData(prev => ({...prev, ...profileForm})); 
     setIsProfileOpen(false); 
   };
+
+  const availableUsersToInvite = inviteMode && currentRoom 
+    ? allUsers.filter(u => !currentRoom.members.includes(u.id))
+    : allUsers;
 
   // ================= 渲染畫面 =================
   if (!user || !userData) {
@@ -261,10 +309,8 @@ export default function App() {
           <button onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className="mt-4 text-blue-600 w-full text-center text-sm font-bold hover:underline">
             {isRegistering ? '已有帳號？切換登入' : '沒有帳號？立即註冊'}
           </button>
-          
           <div className="mt-6">
             <button onClick={handleGoogleSignIn} className="w-full bg-white border border-gray-200 py-3 rounded-xl flex items-center justify-center space-x-3 hover:bg-gray-50 font-bold text-gray-700 shadow-sm transition-all">
-              <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
               <span>使用 Google 快速登入</span>
             </button>
           </div>
@@ -277,7 +323,7 @@ export default function App() {
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans">
       
       {/* 左側 Sidebar */}
-      <div className={`${currentRoom ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white border-r`}>
+      <div className={`${currentRoom ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white border-r relative`}>
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer hover:opacity-80" onClick={() => setIsProfileOpen(true)}>
             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
@@ -300,12 +346,13 @@ export default function App() {
           {sidebarTab === 'chats' ? (
             chatrooms.length > 0 ? chatrooms.map(room => (
               <div key={room.id} onClick={() => setCurrentRoom(room)} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''}`}>
-                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {/* 【修正這裡】顯示正確的對方頭貼 */}
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
                   {getRoomPhoto(room) ? (
                     <img src={getRoomPhoto(room)} className="w-full h-full object-cover" alt="avatar" />
                   ) : (
-                    <span className="font-bold text-gray-500">{getRoomName(room)[0].toUpperCase()}</span>
+                    room.type === 'group' 
+                    ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    : <span className="font-bold">{getRoomName(room)[0].toUpperCase()}</span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -315,20 +362,28 @@ export default function App() {
               </div>
             )) : <div className="p-6 text-center text-gray-400 mt-10">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
           ) : (
-            allUsers.length > 0 ? allUsers.map(u => (
-              <div key={u.id} className="p-4 border-b flex items-center justify-between hover:bg-gray-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500">{u.username[0].toUpperCase()}</span>}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-gray-800 truncate">{u.username}</h3>
-                    <p className="text-xs text-gray-500 truncate">{u.email}</p>
-                  </div>
-                </div>
-                <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
+            <>
+              <div className="p-4 border-b">
+                <button onClick={() => openGroupModal(false)} className="w-full bg-blue-50 border border-blue-200 text-blue-600 py-2 rounded-xl font-bold hover:bg-blue-100 transition flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                  建立新群組
+                </button>
               </div>
-            )) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>
+              {allUsers.length > 0 ? allUsers.map(u => (
+                <div key={u.id} className="p-4 border-b flex items-center justify-between hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500">{u.username[0].toUpperCase()}</span>}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-gray-800 truncate">{u.username}</h3>
+                      <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
+                </div>
+              )) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
+            </>
           )}
         </div>
       </div>
@@ -337,22 +392,44 @@ export default function App() {
       <div className={`${!currentRoom ? 'hidden md:flex' : 'flex'} flex-col flex-1 bg-white relative`}>
         {currentRoom ? (
           <>
-            <div className="bg-white p-4 border-b flex items-center shadow-sm z-10">
-              <button onClick={() => setCurrentRoom(null)} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">← 返回</button>
-              {/* 聊天室標題旁邊也加上對方頭貼 */}
-              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden mr-3">
-                {getRoomPhoto(currentRoom) ? (
-                  <img src={getRoomPhoto(currentRoom)} className="w-full h-full object-cover" alt="avatar" />
-                ) : (
-                  <span className="font-bold text-gray-500 text-xs">{getRoomName(currentRoom)[0].toUpperCase()}</span>
-                )}
+            <div className="bg-white p-4 border-b flex items-center justify-between shadow-sm z-10">
+              <div className="flex items-center flex-1 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition" onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
+                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); }} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">←</button>
+                <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center overflow-hidden mr-3 flex-shrink-0">
+                  {getRoomPhoto(currentRoom) ? (
+                    <img src={getRoomPhoto(currentRoom)} className="w-full h-full object-cover" alt="avatar" />
+                  ) : (
+                    currentRoom.type === 'group' 
+                    ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    : <span className="font-bold text-xs">{getRoomName(currentRoom)[0].toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold text-gray-800 leading-tight truncate">
+                    {getRoomName(currentRoom)} {currentRoom.type === 'group' && <span className="text-xs text-blue-500 ml-1">✎ 編輯</span>}
+                  </h2>
+                  <p className="text-xs text-gray-500">{currentRoom.members?.length || 0} 位成員</p>
+                </div>
               </div>
-              <h2 className="text-lg font-bold text-gray-800">{getRoomName(currentRoom)}</h2>
+              
+              <button onClick={() => openGroupModal(true)} className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition flex-shrink-0 ml-2" title="邀請新成員加入">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
               {messages.map(msg => {
                 const isMe = msg.senderId === user.uid;
+                const isSystem = msg.senderId === 'system';
+                
+                if (isSystem) {
+                  return (
+                    <div key={msg.id} className="flex justify-center my-2">
+                      <span className="bg-gray-200 text-gray-500 text-xs px-3 py-1 rounded-full font-medium">{msg.text}</span>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                     {!isMe && (
@@ -372,16 +449,8 @@ export default function App() {
 
             <form onSubmit={handleSendMessage} className="p-4 bg-white border-t">
               <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newMessage} 
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="輸入訊息..." 
-                  className="flex-1 p-3 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 px-6"
-                />
-                <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 text-white p-3 rounded-full font-bold hover:bg-blue-700 disabled:bg-gray-300 transition w-12 h-12 flex items-center justify-center shadow-md">
-                  ➤
-                </button>
+                <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="輸入訊息..." className="flex-1 p-3 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 px-6" />
+                <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 text-white p-3 rounded-full font-bold hover:bg-blue-700 disabled:bg-gray-300 transition w-12 h-12 flex items-center justify-center shadow-md">➤</button>
               </div>
             </form>
           </>
@@ -393,13 +462,87 @@ export default function App() {
         )}
       </div>
 
+      {/* --- 編輯群組 Modal --- */}
+      {isEditGroupModalOpen && currentRoom?.type === 'group' && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <h2 className="text-xl font-bold mb-4">編輯群組資訊</h2>
+            <form onSubmit={handleEditGroupSubmit} className="space-y-4 text-left">
+              <div>
+                <label className="text-sm font-bold text-gray-600">群組名稱</label>
+                <input 
+                  type="text" value={editGroupForm.name} onChange={(e) => setEditGroupForm({...editGroupForm, name: e.target.value})} 
+                  className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required 
+                />
+              </div>
+              <div>
+                <label className="text-sm font-bold text-gray-600">群組圖片網址</label>
+                <input 
+                  type="url" value={editGroupForm.photoURL} onChange={(e) => setEditGroupForm({...editGroupForm, photoURL: e.target.value})} 
+                  className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="圖片連結 (選填)" 
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setIsEditGroupModalOpen(false)} className="flex-1 bg-gray-100 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition">取消</button>
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">儲存群組</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- 群組邀請/建立 Modal --- */}
+      {isGroupModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[80vh]">
+            <h2 className="text-xl font-bold mb-4">{inviteMode ? '邀請成員加入' : '建立新群組'}</h2>
+            
+            {!inviteMode && (
+              <div className="mb-4">
+                <label className="text-sm font-bold text-gray-600">群組名稱 (選填)</label>
+                <input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} className="w-full p-3 mt-1 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入群組名稱..." />
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto border border-gray-100 rounded-xl p-2 mb-4">
+              {availableUsersToInvite.length > 0 ? availableUsersToInvite.map(u => (
+                <label key={u.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition">
+                  <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={() => toggleUserSelect(u.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" />
+                  <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500 text-xs">{u.username[0].toUpperCase()}</span>}
+                  </div>
+                  <span className="font-bold text-gray-800">{u.username}</span>
+                </label>
+              )) : (
+                <p className="text-center text-gray-400 p-4">沒有可以邀請的對象</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-auto">
+              <button onClick={() => setIsGroupModalOpen(false)} className="flex-1 bg-gray-100 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition">取消</button>
+              <button onClick={handleGroupSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">
+                {inviteMode ? '邀請加入' : '建立群組'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Profile Modal */}
       {isProfileOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
             <h2 className="text-xl font-bold mb-4">編輯個人檔案</h2>
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div><label className="text-sm font-bold text-gray-600">使用者名稱</label><input type="text" value={profileForm.username} onChange={(e) => setProfileForm({...profileForm, username: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required /></div>
+            <form onSubmit={handleSaveProfile} className="space-y-4 text-left">
+              <div>
+                <label className="text-sm font-bold text-gray-600">使用者名稱</label>
+                <input type="text" value={profileForm.username} onChange={(e) => setProfileForm({...profileForm, username: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required />
+              </div>
+              <div>
+                <label className="text-sm font-bold text-gray-600">顯示信箱 (Email)</label>
+                <input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required />
+                <p className="text-xs text-gray-400 mt-1">此信箱將顯示給其他用戶，不影響登入帳號。</p>
+              </div>
               <div><label className="text-sm font-bold text-gray-600">頭像網址</label><input type="url" value={profileForm.photoURL} onChange={(e) => setProfileForm({...profileForm, photoURL: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="圖片連結 (選填)" /></div>
               <div><label className="text-sm font-bold text-gray-600">電話</label><input type="tel" value={profileForm.phone} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" /></div>
               <div><label className="text-sm font-bold text-gray-600">地址</label><input type="text" value={profileForm.address} onChange={(e) => setProfileForm({...profileForm, address: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" /></div>
