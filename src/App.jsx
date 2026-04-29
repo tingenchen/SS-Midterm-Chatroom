@@ -25,7 +25,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 定義可用的表情符號
 const EMOJI_LIST = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export default function App() {
@@ -51,12 +50,12 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   
-  // 訊息操作狀態 (編輯、回覆、表情)
+  // 訊息操作狀態 
   const [editingMsgId, setEditingMsgId] = useState(null); 
   const [editMsgText, setEditMsgText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null); 
   const [highlightedMsgId, setHighlightedMsgId] = useState(null); 
-  const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null); // 控制表情選擇器在哪則訊息展開
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null); 
   
   // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,7 +146,7 @@ export default function App() {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "modified") {
           const data = change.doc.data();
-          // 【隱藏歷史 AI 對話】：如果是跟機器人的對話，直接忽略它不跳通知
+          // 【隱藏歷史 AI 對話】
           if (data.members && data.members.includes('gemini-bot-id')) return;
 
           if (data.members && data.members.includes(user.uid)) {
@@ -173,7 +172,6 @@ export default function App() {
 
       snapshot.forEach(d => {
         const data = d.data();
-        // 【隱藏歷史 AI 對話】：只收集沒有包含機器人的房間
         if (data.members && data.members.includes(user.uid) && !data.members.includes('gemini-bot-id')) {
            roomsList.push({ id: d.id, ...data });
         }
@@ -184,7 +182,6 @@ export default function App() {
       
       setCurrentRoom(prevRoom => {
         if (!prevRoom) return null;
-        // 如果前一個房間是跟機器人的對話，切換後清空它
         if (prevRoom.members && prevRoom.members.includes('gemini-bot-id')) return null;
         const updatedRoom = roomsList.find(r => r.id === prevRoom.id);
         return updatedRoom || prevRoom;
@@ -280,18 +277,16 @@ export default function App() {
     }
   };
 
-  // --- 處理加入/取消表情符號 ---
   const handleReaction = async (msgId, emoji, currentReactions) => {
     if (!currentRoom) return;
     try {
       const msgRef = doc(db, `chatrooms/${currentRoom.id}/messages`, msgId);
-      // 如果該用戶已經按過這個表情，就移除它；否則更新為這個表情
       if (currentReactions && currentReactions[user.uid] === emoji) {
         await updateDoc(msgRef, { [`reactions.${user.uid}`]: deleteField() });
       } else {
         await updateDoc(msgRef, { [`reactions.${user.uid}`]: emoji });
       }
-      setReactionPickerMsgId(null); // 關閉選擇器
+      setReactionPickerMsgId(null); 
     } catch (err) {
       console.error("表情更新失敗", err);
       alert("表情更新失敗：" + err.message);
@@ -458,6 +453,37 @@ export default function App() {
     setUserData(prev => ({...prev, ...profileForm})); setIsProfileOpen(false); 
   };
 
+  // --- 【更新】：智慧型日期時間格式化工具 ---
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const now = new Date();
+    
+    // 檢查是否為今天
+    const isToday = 
+      date.getDate() === now.getDate() &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear();
+
+    if (isToday) {
+      // 今天的訊息：僅顯示「上午/下午 HH:mm」
+      return date.toLocaleTimeString('zh-TW', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } else {
+      // 非今天的訊息：顯示「MM/DD 上午/下午 HH:mm」
+      return date.toLocaleString('zh-TW', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    }
+  };
+
   if (!user || !userData) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
@@ -568,7 +594,10 @@ export default function App() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-800 truncate">{getRoomName(room)} {isMuted && <span className="text-xs text-red-500 ml-1">(受限制)</span>}</h3>
+                  <h3 className="font-bold text-gray-800 truncate flex items-center justify-between">
+                    <span>{getRoomName(room)} {isMuted && <span className="text-xs text-red-500 ml-1">(受限制)</span>}</span>
+                    <span className="text-[10px] font-normal text-gray-400">{formatTime(room.lastMessageTime)}</span>
+                  </h3>
                   <p className="text-sm text-gray-500 truncate mt-1">{isMuted ? '訊息已隱藏' : (room.lastMessage || '尚無訊息')}</p>
                 </div>
               </div>
@@ -581,8 +610,7 @@ export default function App() {
                   建立新群組
                 </button>
               </div>
-
-              {allUsers.length > 0 && allUsers.map(u => {
+              {allUsers.length > 0 ? allUsers.map(u => {
                 const isBlockedByMe = blockedUserIds.includes(u.id);
                 return (
                 <div key={u.id} className={`p-4 border-b flex items-center justify-between hover:bg-gray-50 ${isBlockedByMe ? 'bg-red-50/30' : ''}`}>
@@ -605,7 +633,7 @@ export default function App() {
                     <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
                   </div>
                 </div>
-              )})}
+              )}) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
             </>
           )}
         </div>
@@ -694,7 +722,6 @@ export default function App() {
                     
                     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] transition-transform duration-300 ${isHighlighted ? 'animate-pop-wobble' : ''} relative`}>
                       
-                      {/* 操作選單：新增了表情按鈕 */}
                       <div className={`flex gap-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5 ${isMe ? 'right-0' : 'left-0'} bg-white shadow-sm border border-gray-200 rounded-lg px-1.5 py-1 z-20`}>
                         <button 
                            onClick={(e) => { e.stopPropagation(); setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id); }} 
@@ -707,7 +734,6 @@ export default function App() {
                         {isMe && <button onClick={() => handleUnsendMessage(msg)} className="text-xs px-1 text-red-500 hover:text-red-700 font-bold">收回</button>}
                       </div>
 
-                      {/* 彈出表情選擇器 */}
                       {reactionPickerMsgId === msg.id && (
                         <div className={`absolute -top-14 ${isMe ? 'right-0' : 'left-0'} bg-white shadow-lg border border-gray-100 rounded-full px-3 py-2 flex gap-2 z-30 animate-slide-in-bottom`}>
                           {EMOJI_LIST.map(emoji => (
@@ -722,9 +748,8 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* 訊息本體 */}
                       {msg.imageUrl ? (
-                        <div className={`rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : 'border-black/5'} transition-all`}>
+                        <div className={`relative rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : 'border-black/5'} transition-all`}>
                            {msg.replyTo && (
                              <div 
                                onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
@@ -735,6 +760,10 @@ export default function App() {
                              </div>
                            )}
                            <img src={msg.imageUrl} alt="chat image" className="max-w-[200px] sm:max-w-[300px] h-auto object-cover block" />
+                           {/* 圖片訊息的時間顯示 */}
+                           <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/40 text-white/90 text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm pointer-events-none">
+                              <span>{formatTime(msg.createdAt)}</span>
+                           </div>
                         </div>
                       ) : (
                         <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} transition-all ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border'}`}>
@@ -761,13 +790,16 @@ export default function App() {
                           ) : (
                             <>
                               <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                              {msg.isEdited && <p className={`text-[10px] opacity-70 text-right mt-1 font-medium ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>已編輯</p>}
+                              {/* 文字訊息的時間與已編輯狀態 */}
+                              <div className={`flex items-center justify-end gap-1.5 mt-1 -mb-0.5 ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>
+                                {msg.isEdited && <span className="text-[10px] font-medium">已編輯</span>}
+                                <span className="text-[10px] font-medium">{formatTime(msg.createdAt)}</span>
+                              </div>
                             </>
                           )}
                         </div>
                       )}
 
-                      {/* 表情顯示區塊 (顯示在訊息泡泡下方重疊) */}
                       {Object.keys(reactionCounts).length > 0 && (
                         <div className={`absolute -bottom-4 flex gap-1 ${isMe ? 'right-2 flex-row-reverse' : 'left-2'} z-10`}>
                           {Object.entries(reactionCounts).map(([emoji, data]) => (
