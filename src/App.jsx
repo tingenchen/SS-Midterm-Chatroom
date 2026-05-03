@@ -146,7 +146,6 @@ export default function App() {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "modified") {
           const data = change.doc.data();
-          // 【隱藏歷史 AI 對話】
           if (data.members && data.members.includes('gemini-bot-id')) return;
 
           if (data.members && data.members.includes(user.uid)) {
@@ -453,34 +452,16 @@ export default function App() {
     setUserData(prev => ({...prev, ...profileForm})); setIsProfileOpen(false); 
   };
 
-  // --- 【更新】：智慧型日期時間格式化工具 ---
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
     const now = new Date();
-    
-    // 檢查是否為今天
-    const isToday = 
-      date.getDate() === now.getDate() &&
-      date.getMonth() === now.getMonth() &&
-      date.getFullYear() === now.getFullYear();
+    const isToday = date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
 
     if (isToday) {
-      // 今天的訊息：僅顯示「上午/下午 HH:mm」
-      return date.toLocaleTimeString('zh-TW', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
+      return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: true });
     } else {
-      // 非今天的訊息：顯示「MM/DD 上午/下午 HH:mm」
-      return date.toLocaleString('zh-TW', {
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
+      return date.toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
     }
   };
 
@@ -582,6 +563,9 @@ export default function App() {
                   if (mutualBlockedIds.includes(oid)) isMuted = true;
               }
 
+              // 【核心修復】：判斷這間聊天室的「最後一則訊息」是不是被封鎖的人傳的
+              const isLastMessageBlocked = room.lastMessageSenderId && mutualBlockedIds.includes(room.lastMessageSenderId);
+
               return (
               <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null); setReactionPickerMsgId(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''} ${isMuted ? 'opacity-50' : ''}`}>
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
@@ -598,7 +582,10 @@ export default function App() {
                     <span>{getRoomName(room)} {isMuted && <span className="text-xs text-red-500 ml-1">(受限制)</span>}</span>
                     <span className="text-[10px] font-normal text-gray-400">{formatTime(room.lastMessageTime)}</span>
                   </h3>
-                  <p className="text-sm text-gray-500 truncate mt-1">{isMuted ? '訊息已隱藏' : (room.lastMessage || '尚無訊息')}</p>
+                  {/* 【核心修復】：套用 isLastMessageBlocked 的檢查，避免在群組中顯示被封鎖者的訊息 */}
+                  <p className="text-sm text-gray-500 truncate mt-1">
+                    {isMuted ? '對話受到限制' : (isLastMessageBlocked ? '訊息已隱藏' : (room.lastMessage || '尚無訊息'))}
+                  </p>
                 </div>
               </div>
             )}) : <div className="p-6 text-center text-gray-400 mt-10">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
@@ -702,6 +689,13 @@ export default function App() {
                   );
                 }
 
+                const senderInfo = (() => {
+                    if (isMe) return { name: userData.username, photo: userData.photoURL };
+                    const found = allUsers.find(u => u.id === msg.senderId);
+                    if (found) return { name: found.username, photo: found.photoURL };
+                    return { name: msg.senderName, photo: msg.senderPhoto }; 
+                })();
+
                 // 計算表情數量
                 const reactionCounts = {};
                 if (msg.reactions) {
@@ -716,7 +710,7 @@ export default function App() {
                   <div key={msg.id} id={`msg-${msg.id}`} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative animate-slide-in-bottom mb-4`}>
                     {!isMe && (
                       <div className="w-8 h-8 rounded-full bg-gray-300 mr-2 flex-shrink-0 overflow-hidden flex items-center justify-center mt-1">
-                        {msg.senderPhoto ? <img src={msg.senderPhoto} className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-white">{msg.senderName[0].toUpperCase()}</span>}
+                        {senderInfo.photo ? <img src={senderInfo.photo} className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-white">{senderInfo.name[0].toUpperCase()}</span>}
                       </div>
                     )}
                     
@@ -760,14 +754,13 @@ export default function App() {
                              </div>
                            )}
                            <img src={msg.imageUrl} alt="chat image" className="max-w-[200px] sm:max-w-[300px] h-auto object-cover block" />
-                           {/* 圖片訊息的時間顯示 */}
                            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/40 text-white/90 text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm pointer-events-none">
                               <span>{formatTime(msg.createdAt)}</span>
                            </div>
                         </div>
                       ) : (
                         <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} transition-all ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border'}`}>
-                          {!isMe && <p className="text-xs text-gray-400 mb-1 font-bold">{msg.senderName}</p>}
+                          {!isMe && <p className="text-xs text-gray-400 mb-1 font-bold">{senderInfo.name}</p>}
                           
                           {msg.replyTo && (
                             <div 
@@ -790,7 +783,6 @@ export default function App() {
                           ) : (
                             <>
                               <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                              {/* 文字訊息的時間與已編輯狀態 */}
                               <div className={`flex items-center justify-end gap-1.5 mt-1 -mb-0.5 ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>
                                 {msg.isEdited && <span className="text-[10px] font-medium">已編輯</span>}
                                 <span className="text-[10px] font-medium">{formatTime(msg.createdAt)}</span>

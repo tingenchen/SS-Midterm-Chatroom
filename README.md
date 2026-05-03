@@ -1,16 +1,25 @@
-# React + Vite
+# Software Studio 2026 Spring
+## Midterm - Chatroom
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### How To Operate My Web
+1. 登入網站，進入聊天室
+目前已有測試帳號test1@test.com, test2@test.com等(密碼是12345678)，也可以註冊新帳號，或是使用google快速登入
+2. 私訊、群組
+在左側可以點選所有用戶，看到所有已註冊帳號，點擊私訊可以建立一對一聊天室，右上角按鈕可以邀請人，讓此聊天室變成群組聊天室，也可以直接在所有用戶處直接創立群組聊天室。
+3. 通知
+如果被傳訊息的分頁開著(不是無痕模式)，就會在右下角跳出通知
+4. 動畫
+新的訊息會以浮出的方式出現在聊天室
+5. User Profile
+點擊左上角處可以編輯個人檔案，包含頭像、名稱、信箱、電話、地址。前三者會在所有用戶處顯示。群組的名稱和頭像也可以編輯。
+6. Message Operation
+將滑鼠移至訊息上時，會出現按鈕。點擊收回，訊息就會從聊天室中消失，所有人都再也看不到。
+點擊編輯並儲存，訊息就會在所有人的畫面中改變，並顯示已編輯。
+右上角搜尋訊息處打字，聊天室就會只剩下所有擁有該段文字的訊息。
+下方輸入訊息處左邊，有個圖片按鈕，點擊後可以上傳圖片。圖片上傳後無法編輯。
+7. Block user
+在所有用戶處或是私訊聊天室都可以封鎖對方，封鎖後彼此無法接收與傳送訊息給對方，在群組聊天室則是看不到對方訊息。
+8. Send the emoji to the message
+將滑鼠移至訊息上方，點擊表情符號按鈕，會出現六個表情符號可選擇，按下其中一個後就會顯示在該訊息旁邊，每個訊息可以被回覆多種不同的表情符號，但使用者只能回覆一個表情符號給同一則訊息。再點擊一次自己回覆的表情符號就能取消。
+9. Reply for specify message
+滑鼠移至訊息上方可以回覆訊息，傳送後點擊回覆的訊息，會跳至該訊息的地方，且該訊息會左右晃動。
