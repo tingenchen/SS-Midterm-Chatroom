@@ -28,7 +28,6 @@ const db = getFirestore(app);
 const EMOJI_LIST = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export default function App() {
-  // 【新增】：深色模式狀態 (預設讀取系統設定或 localStorage，這裡簡化預設為 false)
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   const [user, setUser] = useState(null);
@@ -38,29 +37,24 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
   
-  // Profile
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({ username: '', email: '', phone: '', address: '', photoURL: '' });
   
-  // 核心資料狀態
   const [allUsers, setAllUsers] = useState([]); 
   const [chatrooms, setChatrooms] = useState([]); 
   const [currentRoom, setCurrentRoom] = useState(null); 
   const [messages, setMessages] = useState([]); 
   
-  // 訊息輸入區狀態
   const [newMessage, setNewMessage] = useState(''); 
   const [selectedImage, setSelectedImage] = useState(null); 
   const [isUploading, setIsUploading] = useState(false); 
   
-  // 訊息操作狀態 
   const [editingMsgId, setEditingMsgId] = useState(null); 
   const [editMsgText, setEditMsgText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null); 
   const [highlightedMsgId, setHighlightedMsgId] = useState(null); 
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null); 
   
-  // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
 
   const [sidebarTab, setSidebarTab] = useState('chats'); 
@@ -73,7 +67,9 @@ export default function App() {
   const userDataRef = useRef(null);
   const allUsersRef = useRef([]);
 
-  // --- 群組狀態 ---
+  // 【新增】：用來記錄每個房間「最後被通知的時間」，防止舊訊息重複跳通知
+  const notifiedTimesRef = useRef({});
+
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [inviteMode, setInviteMode] = useState(false); 
   const [groupName, setGroupName] = useState('');
@@ -81,7 +77,6 @@ export default function App() {
   const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
   const [editGroupForm, setEditGroupForm] = useState({ name: '', photoURL: '' });
 
-  // 監聽並套用深色模式的 class 到 document body (讓整個背景生效)
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -156,25 +151,39 @@ export default function App() {
       const roomsList = [];
       
       snapshot.docChanges().forEach((change) => {
-        if (change.type === "modified") {
-          const data = change.doc.data();
-          if (data.members && data.members.includes('gemini-bot-id')) return;
+        const data = change.doc.data();
 
-          if (data.members && data.members.includes(user.uid)) {
-            if (data.lastMessageSenderId && data.lastMessageSenderId !== user.uid) {
-              const myBlockList = userDataRef.current?.blockedUsers || [];
-              const usersWhoBlockedMe = allUsersRef.current.filter(u => u.blockedUsers?.includes(user.uid)).map(u => u.id);
-              
-              if (!myBlockList.includes(data.lastMessageSenderId) && !usersWhoBlockedMe.includes(data.lastMessageSenderId)) {
-                  if (currentRoomIdRef.current !== change.doc.id || document.hidden) {
-                    if ("Notification" in window && Notification.permission === "granted") {
-                      const titleName = data.type === 'group' ? data.name : data.lastMessageSenderName;
-                      new Notification(`來自 ${titleName} 的新訊息`, {
-                        body: data.lastMessage,
-                        icon: data.photoURL || '/vite.svg'
-                      });
+        // 第一次載入時記錄每個房間的時間
+        if (change.type === "added") {
+          notifiedTimesRef.current[change.doc.id] = data.lastMessageTime || 0;
+        }
+
+        if (change.type === "modified") {
+          const prevTime = notifiedTimesRef.current[change.doc.id] || 0;
+          const currentTime = data.lastMessageTime || 0;
+
+          // 【核心修復】：確保只有在「發送新訊息」導致時間變新時，才進入通知判斷
+          if (currentTime > prevTime) {
+            notifiedTimesRef.current[change.doc.id] = currentTime;
+
+            if (data.members && data.members.includes('gemini-bot-id')) return;
+
+            if (data.members && data.members.includes(user.uid)) {
+              if (data.lastMessageSenderId && data.lastMessageSenderId !== user.uid) {
+                const myBlockList = userDataRef.current?.blockedUsers || [];
+                const usersWhoBlockedMe = allUsersRef.current.filter(u => u.blockedUsers?.includes(user.uid)).map(u => u.id);
+                
+                if (!myBlockList.includes(data.lastMessageSenderId) && !usersWhoBlockedMe.includes(data.lastMessageSenderId)) {
+                    if (currentRoomIdRef.current !== change.doc.id || document.hidden) {
+                      if ("Notification" in window && Notification.permission === "granted") {
+                        const titleName = data.type === 'group' ? data.name : data.lastMessageSenderName;
+                        new Notification(`來自 ${titleName} 的新訊息`, {
+                          body: data.lastMessage,
+                          icon: data.photoURL || '/vite.svg'
+                        });
+                      }
                     }
-                  }
+                }
               }
             }
           }
@@ -478,7 +487,6 @@ export default function App() {
   };
 
   if (!user || !userData) {
-    // 登入畫面的深色模式適應
     return (
       <div className={`flex flex-col items-center justify-center min-h-screen p-6 transition-colors duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
         <div className={`p-10 rounded-2xl shadow-xl w-full max-w-md transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
@@ -530,7 +538,6 @@ export default function App() {
     return true;
   });
 
-  // 【最外層的 div】：這決定了整個應用的底色
   return (
     <div className={`flex h-screen overflow-hidden font-sans transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
       <style>{`
@@ -547,7 +554,6 @@ export default function App() {
         @keyframes slide-in-bottom { 0% { opacity: 0; transform: translateY(15px); } 100% { opacity: 1; transform: translateY(0); } }
         .animate-slide-in-bottom { animation: slide-in-bottom 0.3s ease-out forwards; }
         
-        /* 隱藏原生卷軸，讓畫面更乾淨 */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
@@ -568,7 +574,6 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-2">
-            {/* 【新增】：深色模式切換按鈕 */}
             <button 
                onClick={() => setIsDarkMode(!isDarkMode)} 
                className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
@@ -595,7 +600,6 @@ export default function App() {
               }
               const isLastMessageBlocked = room.lastMessageSenderId && mutualBlockedIds.includes(room.lastMessageSenderId);
 
-              // 判斷是否為當前房間，套用不同的背景色
               const isActive = currentRoom?.id === room.id;
               const hoverClass = isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50';
               const activeClass = isActive ? (isDarkMode ? 'bg-gray-700' : 'bg-blue-50') : '';
@@ -787,7 +791,6 @@ export default function App() {
                            </div>
                         </div>
                       ) : (
-                        // 【深色模式文字泡泡邏輯】：如果是我傳的，保持深藍色底白字；如果是別人傳的，深色模式下變成深灰底白字
                         <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm transition-all ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : (isDarkMode ? 'bg-gray-800 text-gray-100 rounded-tl-sm border border-gray-700' : 'bg-white text-gray-800 rounded-tl-sm border border-gray-200')}`}>
                           {!isMe && <p className={`text-xs mb-1 font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{senderInfo.name}</p>}
                           

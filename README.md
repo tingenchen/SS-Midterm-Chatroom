@@ -26,3 +26,19 @@
 將滑鼠移至訊息上方，點擊表情符號按鈕，會出現六個表情符號可選擇，按下其中一個後就會顯示在該訊息旁邊，每個訊息可以被回覆多種不同的表情符號，但使用者只能回覆一個表情符號給同一則訊息。再點擊一次自己回覆的表情符號就能取消。
 * Reply for specify message
 滑鼠移至訊息上方可以回覆訊息，傳送後點擊回覆的訊息，會跳至該訊息的地方，且該訊息會左右晃動。
+* 額外功能(加開心的)
+深色模式
+
+### Web page link
+
+https://software-studio-7a874.web.app
+
+### GitHub Repository
+
+https://github.com/tingenchen/SS-Midterm-Chatroom
+
+<style>
+table th{
+    width: 100%;
+}
+</style>
