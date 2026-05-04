@@ -28,6 +28,9 @@ const db = getFirestore(app);
 const EMOJI_LIST = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export default function App() {
+  // 【新增】：深色模式狀態 (預設讀取系統設定或 localStorage，這裡簡化預設為 false)
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null); 
   const [email, setEmail] = useState('');
@@ -77,6 +80,15 @@ export default function App() {
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
   const [editGroupForm, setEditGroupForm] = useState({ name: '', photoURL: '' });
+
+  // 監聽並套用深色模式的 class 到 document body (讓整個背景生效)
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -466,21 +478,22 @@ export default function App() {
   };
 
   if (!user || !userData) {
+    // 登入畫面的深色模式適應
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
-        <div className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md">
+      <div className={`flex flex-col items-center justify-center min-h-screen p-6 transition-colors duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        <div className={`p-10 rounded-2xl shadow-xl w-full max-w-md transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
           <h1 className="text-3xl font-black text-center mb-6">{isRegistering ? '註冊帳號' : '會員登入'}</h1>
           {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm font-bold">{error}</div>}
           <form onSubmit={handleAuth} className="space-y-4">
-            <input type="email" placeholder="電子郵件" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
-            <input type="password" placeholder="密碼" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
-            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700">{isRegistering ? '註冊' : '登入'}</button>
+            <input type="email" placeholder="電子郵件" value={email} onChange={(e) => setEmail(e.target.value)} required className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 text-gray-900'}`} />
+            <input type="password" placeholder="密碼" value={password} onChange={(e) => setPassword(e.target.value)} required className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 text-gray-900'}`} />
+            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors">{isRegistering ? '註冊' : '登入'}</button>
           </form>
-          <button onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className="mt-4 text-blue-600 w-full text-center text-sm font-bold hover:underline">
+          <button onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className={`mt-4 w-full text-center text-sm font-bold hover:underline transition-colors ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
             {isRegistering ? '已有帳號？切換登入' : '沒有帳號？立即註冊'}
           </button>
           <div className="mt-6">
-            <button onClick={handleGoogleSignIn} className="w-full bg-white border border-gray-200 py-3 rounded-xl flex items-center justify-center space-x-3 hover:bg-gray-50 font-bold text-gray-700 shadow-sm transition-all">
+            <button onClick={handleGoogleSignIn} className={`w-full border py-3 rounded-xl flex items-center justify-center space-x-3 font-bold shadow-sm transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
               <span>使用 Google 快速登入</span>
             </button>
           </div>
@@ -517,8 +530,9 @@ export default function App() {
     return true;
   });
 
+  // 【最外層的 div】：這決定了整個應用的底色
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden font-sans">
+    <div className={`flex h-screen overflow-hidden font-sans transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
       <style>{`
         @keyframes pop-wobble {
           0% { transform: scale(1) rotate(0deg); }
@@ -532,26 +546,43 @@ export default function App() {
         .animate-pop-wobble { animation: pop-wobble 1.2s ease-in-out; z-index: 20; position: relative; }
         @keyframes slide-in-bottom { 0% { opacity: 0; transform: translateY(15px); } 100% { opacity: 1; transform: translateY(0); } }
         .animate-slide-in-bottom { animation: slide-in-bottom 0.3s ease-out forwards; }
+        
+        /* 隱藏原生卷軸，讓畫面更乾淨 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.8); }
       `}</style>
       
       {/* 左側 Sidebar */}
-      <div className={`${currentRoom ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white border-r relative`}>
-        <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
+      <div className={`${currentRoom ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        <div className={`p-4 border-b flex items-center justify-between transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
           <div className="flex items-center gap-3 cursor-pointer hover:opacity-80" onClick={() => setIsProfileOpen(true)}>
             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
               {userData.photoURL ? <img src={userData.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-blue-600">{userData.username[0].toUpperCase()}</span>}
             </div>
             <div>
-              <h2 className="font-bold text-gray-800 leading-tight">{userData.username}</h2>
-              <p className="text-xs text-gray-500">點擊編輯個人檔案</p>
+              <h2 className={`font-bold leading-tight transition-colors ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{userData.username}</h2>
+              <p className={`text-xs transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>點擊編輯個人檔案</p>
             </div>
           </div>
-          <button onClick={() => signOut(auth)} className="text-xs text-red-500 font-bold hover:bg-red-50 p-2 rounded-lg transition">登出</button>
+          
+          <div className="flex items-center gap-2">
+            {/* 【新增】：深色模式切換按鈕 */}
+            <button 
+               onClick={() => setIsDarkMode(!isDarkMode)} 
+               className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+               title="切換深色/淺色模式"
+            >
+               {isDarkMode ? '🌙' : '☀️'}
+            </button>
+            <button onClick={() => signOut(auth)} className="text-xs text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 p-2 rounded-lg transition">登出</button>
+          </div>
         </div>
 
-        <div className="flex border-b">
-          <button onClick={() => setSidebarTab('chats')} className={`flex-1 py-3 text-sm font-bold ${sidebarTab === 'chats' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>聊天室</button>
-          <button onClick={() => setSidebarTab('users')} className={`flex-1 py-3 text-sm font-bold ${sidebarTab === 'users' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>所有用戶 ({allUsers.length})</button>
+        <div className={`flex border-b transition-colors ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <button onClick={() => setSidebarTab('chats')} className={`flex-1 py-3 text-sm font-bold transition-colors ${sidebarTab === 'chats' ? 'text-blue-500 border-b-2 border-blue-500' : (isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-50')}`}>聊天室</button>
+          <button onClick={() => setSidebarTab('users')} className={`flex-1 py-3 text-sm font-bold transition-colors ${sidebarTab === 'users' ? 'text-blue-500 border-b-2 border-blue-500' : (isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-50')}`}>所有用戶 ({allUsers.length})</button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -562,12 +593,16 @@ export default function App() {
                   const oid = room.members.find(id => id !== user.uid);
                   if (mutualBlockedIds.includes(oid)) isMuted = true;
               }
-
-              // 【核心修復】：判斷這間聊天室的「最後一則訊息」是不是被封鎖的人傳的
               const isLastMessageBlocked = room.lastMessageSenderId && mutualBlockedIds.includes(room.lastMessageSenderId);
 
+              // 判斷是否為當前房間，套用不同的背景色
+              const isActive = currentRoom?.id === room.id;
+              const hoverClass = isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50';
+              const activeClass = isActive ? (isDarkMode ? 'bg-gray-700' : 'bg-blue-50') : '';
+              const borderClass = isDarkMode ? 'border-gray-700' : 'border-gray-100';
+
               return (
-              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null); setReactionPickerMsgId(null);}} className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition flex items-center gap-3 ${currentRoom?.id === room.id ? 'bg-blue-50' : ''} ${isMuted ? 'opacity-50' : ''}`}>
+              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null); setReactionPickerMsgId(null);}} className={`p-4 border-b cursor-pointer transition flex items-center gap-3 ${borderClass} ${hoverClass} ${activeClass} ${isMuted ? 'opacity-50' : ''}`}>
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
                   {getRoomPhoto(room) ? (
                     <img src={getRoomPhoto(room)} className="w-full h-full object-cover" alt="avatar" />
@@ -578,12 +613,11 @@ export default function App() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-800 truncate flex items-center justify-between">
+                  <h3 className={`font-bold truncate flex items-center justify-between ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                     <span>{getRoomName(room)} {isMuted && <span className="text-xs text-red-500 ml-1">(受限制)</span>}</span>
-                    <span className="text-[10px] font-normal text-gray-400">{formatTime(room.lastMessageTime)}</span>
+                    <span className={`text-[10px] font-normal ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{formatTime(room.lastMessageTime)}</span>
                   </h3>
-                  {/* 【核心修復】：套用 isLastMessageBlocked 的檢查，避免在群組中顯示被封鎖者的訊息 */}
-                  <p className="text-sm text-gray-500 truncate mt-1">
+                  <p className={`text-sm truncate mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                     {isMuted ? '對話受到限制' : (isLastMessageBlocked ? '訊息已隱藏' : (room.lastMessage || '尚無訊息'))}
                   </p>
                 </div>
@@ -591,33 +625,36 @@ export default function App() {
             )}) : <div className="p-6 text-center text-gray-400 mt-10">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
           ) : (
             <>
-              <div className="p-4 border-b">
-                <button onClick={() => openGroupModal(false)} className="w-full bg-blue-50 border border-blue-200 text-blue-600 py-2 rounded-xl font-bold hover:bg-blue-100 transition flex items-center justify-center gap-2">
+              <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                <button onClick={() => openGroupModal(false)} className={`w-full py-2 rounded-xl font-bold transition flex items-center justify-center gap-2 ${isDarkMode ? 'bg-blue-900/30 text-blue-400 border border-blue-800 hover:bg-blue-900/50' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'}`}>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                   建立新群組
                 </button>
               </div>
               {allUsers.length > 0 ? allUsers.map(u => {
                 const isBlockedByMe = blockedUserIds.includes(u.id);
+                const hoverClass = isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50';
+                const blockedBg = isDarkMode ? 'bg-red-900/20' : 'bg-red-50/30';
+                
                 return (
-                <div key={u.id} className={`p-4 border-b flex items-center justify-between hover:bg-gray-50 ${isBlockedByMe ? 'bg-red-50/30' : ''}`}>
+                <div key={u.id} className={`p-4 border-b flex items-center justify-between transition-colors ${hoverClass} ${isDarkMode ? 'border-gray-700' : 'border-gray-100'} ${isBlockedByMe ? blockedBg : ''}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                       {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500">{u.username[0].toUpperCase()}</span>}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-gray-800 truncate">{u.username}</h3>
-                      <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                      <h3 className={`font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{u.username}</h3>
+                      <p className={`text-xs truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{u.email}</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <button 
                        onClick={() => handleToggleBlockUser(u.id, u.username)} 
-                       className={`px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm flex-shrink-0 ${isBlockedByMe ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                       className={`px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm flex-shrink-0 ${isBlockedByMe ? (isDarkMode ? 'bg-red-900/50 text-red-400 hover:bg-red-900/70' : 'bg-red-100 text-red-600 hover:bg-red-200') : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}`}
                     >
                        {isBlockedByMe ? '解除封鎖' : '封鎖'}
                     </button>
-                    <button onClick={() => startPrivateChat(u)} className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-100 transition shadow-sm flex-shrink-0">私訊</button>
+                    <button onClick={() => startPrivateChat(u)} className={`px-4 py-1.5 rounded-full text-sm font-bold transition shadow-sm flex-shrink-0 ${isDarkMode ? 'bg-blue-900/50 text-blue-400 hover:bg-blue-900/70' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>私訊</button>
                   </div>
                 </div>
               )}) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
@@ -627,13 +664,13 @@ export default function App() {
       </div>
 
       {/* 右側 聊天室主體 */}
-      <div className={`${!currentRoom ? 'hidden md:flex' : 'flex'} flex-col flex-1 bg-white relative`} onClick={() => setReactionPickerMsgId(null)}>
+      <div className={`${!currentRoom ? 'hidden md:flex' : 'flex'} flex-col flex-1 relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`} onClick={() => setReactionPickerMsgId(null)}>
         {currentRoom ? (
           <>
-            <div className="bg-white p-4 border-b flex items-center justify-between shadow-sm z-10">
-              <div className="flex items-center flex-1 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition" onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
-                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); setReactionPickerMsgId(null); }} className="md:hidden mr-3 text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-lg">←</button>
-                <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center overflow-hidden mr-3 flex-shrink-0">
+            <div className={`p-4 border-b flex items-center justify-between shadow-sm z-10 transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className={`flex items-center flex-1 cursor-pointer p-2 rounded-lg transition ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`} onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
+                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); setReactionPickerMsgId(null); }} className={`md:hidden mr-3 font-bold px-3 py-1 rounded-lg ${isDarkMode ? 'bg-gray-700 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>←</button>
+                <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center overflow-hidden mr-3 flex-shrink-0">
                   {getRoomPhoto(currentRoom) ? (
                     <img src={getRoomPhoto(currentRoom)} className="w-full h-full object-cover" alt="avatar" />
                   ) : (
@@ -643,11 +680,11 @@ export default function App() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-gray-800 leading-tight truncate">
+                  <h2 className={`text-lg font-bold leading-tight truncate ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                     {getRoomName(currentRoom)} 
                     {currentRoom.type === 'group' && <span className="text-xs text-blue-500 ml-1">✎ 編輯</span>}
                   </h2>
-                  <p className="text-xs text-gray-500">
+                  <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                     {currentRoom.type === 'private' && isCurrentChatBlocked 
                        ? <span className="text-red-500 font-bold">對話受到限制</span> 
                        : `${currentRoom.members?.length || 0} 位成員`}
@@ -659,23 +696,23 @@ export default function App() {
                 {currentRoom.type === 'private' && (
                   <button 
                     onClick={() => handleToggleBlockUser(currentChatOtherId, getRoomName(currentRoom))}
-                    className={`p-2 rounded-full transition flex-shrink-0 text-xs font-bold ${isCurrentChatBlockedByMe ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    className={`p-2 rounded-full transition flex-shrink-0 text-xs font-bold ${isCurrentChatBlockedByMe ? (isDarkMode ? 'bg-red-900/50 text-red-400 hover:bg-red-900/70' : 'bg-red-100 text-red-600 hover:bg-red-200') : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}`}
                   >
                     {isCurrentChatBlockedByMe ? '解除封鎖' : '封鎖'}
                   </button>
                 )}
                 
                 <div className="relative hidden sm:block">
-                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋訊息..." className="w-32 md:w-48 pl-8 pr-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋訊息..." className={`w-32 md:w-48 pl-8 pr-3 py-1.5 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${isDarkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-gray-100 text-gray-900'}`} />
                   <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-                <button onClick={() => openGroupModal(true)} className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition flex-shrink-0" title="邀請新成員加入">
+                <button onClick={() => openGroupModal(true)} className={`p-2 rounded-full transition flex-shrink-0 ${isDarkMode ? 'bg-gray-700 text-blue-400 hover:bg-gray-600' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`} title="邀請新成員加入">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50 relative">
+            <div className={`flex-1 overflow-y-auto p-4 space-y-4 relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50/50'}`}>
               {filteredMessages.map(msg => {
                 const isMe = msg.senderId === user.uid;
                 const isSystem = msg.senderId === 'system';
@@ -684,7 +721,7 @@ export default function App() {
                 if (isSystem) {
                   return (
                     <div key={msg.id} id={`msg-${msg.id}`} className={`flex justify-center my-2 ${isHighlighted ? 'animate-pop-wobble' : ''}`}>
-                      <span className="bg-gray-200 text-gray-500 text-xs px-3 py-1 rounded-full font-medium">{msg.text}</span>
+                      <span className={`text-xs px-3 py-1 rounded-full font-medium ${isDarkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>{msg.text}</span>
                     </div>
                   );
                 }
@@ -696,7 +733,6 @@ export default function App() {
                     return { name: msg.senderName, photo: msg.senderPhoto }; 
                 })();
 
-                // 計算表情數量
                 const reactionCounts = {};
                 if (msg.reactions) {
                    Object.entries(msg.reactions).forEach(([uid, emoji]) => {
@@ -716,40 +752,32 @@ export default function App() {
                     
                     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] transition-transform duration-300 ${isHighlighted ? 'animate-pop-wobble' : ''} relative`}>
                       
-                      <div className={`flex gap-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5 ${isMe ? 'right-0' : 'left-0'} bg-white shadow-sm border border-gray-200 rounded-lg px-1.5 py-1 z-20`}>
+                      <div className={`flex gap-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5 ${isMe ? 'right-0' : 'left-0'} shadow-sm border rounded-lg px-1.5 py-1 z-20 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                         <button 
                            onClick={(e) => { e.stopPropagation(); setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id); }} 
-                           className="text-xs px-1 text-gray-500 hover:text-blue-600 transition hover:scale-110" title="加入表情"
-                        >
-                          😀
-                        </button>
-                        <button onClick={() => setReplyingTo(msg)} className="text-xs px-1 text-gray-500 hover:text-blue-600 font-bold">回覆</button>
-                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className="text-xs px-1 text-blue-600 hover:text-blue-800 font-bold">編輯</button>}
-                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className="text-xs px-1 text-red-500 hover:text-red-700 font-bold">收回</button>}
+                           className={`text-xs px-1 transition hover:scale-110 ${isDarkMode ? 'text-gray-400 hover:text-blue-400' : 'text-gray-500 hover:text-blue-600'}`} title="加入表情"
+                        >😀</button>
+                        <button onClick={() => setReplyingTo(msg)} className={`text-xs px-1 font-bold ${isDarkMode ? 'text-gray-400 hover:text-blue-400' : 'text-gray-500 hover:text-blue-600'}`}>回覆</button>
+                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className={`text-xs px-1 font-bold ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>編輯</button>}
+                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className={`text-xs px-1 font-bold ${isDarkMode ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'}`}>收回</button>}
                       </div>
 
                       {reactionPickerMsgId === msg.id && (
-                        <div className={`absolute -top-14 ${isMe ? 'right-0' : 'left-0'} bg-white shadow-lg border border-gray-100 rounded-full px-3 py-2 flex gap-2 z-30 animate-slide-in-bottom`}>
+                        <div className={`absolute -top-14 ${isMe ? 'right-0' : 'left-0'} shadow-lg border rounded-full px-3 py-2 flex gap-2 z-30 animate-slide-in-bottom ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                           {EMOJI_LIST.map(emoji => (
-                             <button 
-                                key={emoji} 
-                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }}
-                                className="text-lg hover:scale-125 transition-transform origin-bottom"
-                             >
-                               {emoji}
-                             </button>
+                             <button key={emoji} onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }} className="text-lg hover:scale-125 transition-transform origin-bottom">{emoji}</button>
                           ))}
                         </div>
                       )}
 
                       {msg.imageUrl ? (
-                        <div className={`relative rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : 'border-black/5'} transition-all`}>
+                        <div className={`relative rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : (isDarkMode ? 'border-gray-800' : 'border-black/5')} transition-all`}>
                            {msg.replyTo && (
                              <div 
                                onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
-                               className="bg-black/80 text-white p-2 text-xs cursor-pointer hover:bg-black border-b border-white/20 transition flex flex-col"
+                               className={`p-2 text-xs cursor-pointer transition flex flex-col border-b ${isDarkMode ? 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700' : 'bg-black/80 text-white hover:bg-black border-white/20'}`}
                              >
-                               <span className="font-bold text-blue-300">{msg.replyTo.senderName}</span>
+                               <span className={`font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-300'}`}>{msg.replyTo.senderName}</span>
                                <span className="truncate opacity-80">{msg.replyTo.text}</span>
                              </div>
                            )}
@@ -759,13 +787,14 @@ export default function App() {
                            </div>
                         </div>
                       ) : (
-                        <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} transition-all ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white text-gray-800 rounded-tl-sm border'}`}>
-                          {!isMe && <p className="text-xs text-gray-400 mb-1 font-bold">{senderInfo.name}</p>}
+                        // 【深色模式文字泡泡邏輯】：如果是我傳的，保持深藍色底白字；如果是別人傳的，深色模式下變成深灰底白字
+                        <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm transition-all ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : (isDarkMode ? 'bg-gray-800 text-gray-100 rounded-tl-sm border border-gray-700' : 'bg-white text-gray-800 rounded-tl-sm border border-gray-200')}`}>
+                          {!isMe && <p className={`text-xs mb-1 font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{senderInfo.name}</p>}
                           
                           {msg.replyTo && (
                             <div 
                               onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
-                              className={`rounded p-2 mb-2 text-xs cursor-pointer transition flex flex-col border-l-4 ${isMe ? 'bg-white/20 hover:bg-white/30 border-blue-200' : 'bg-gray-100 hover:bg-gray-200 border-blue-400'}`}
+                              className={`rounded p-2 mb-2 text-xs cursor-pointer transition flex flex-col border-l-4 ${isMe ? 'bg-white/20 hover:bg-white/30 border-blue-200' : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 border-blue-400' : 'bg-gray-100 hover:bg-gray-200 border-blue-400')}`}
                             >
                               <span className="font-bold font-sans opacity-90">{msg.replyTo.senderName}</span>
                               <span className="truncate opacity-80 mt-0.5">{msg.replyTo.text}</span>
@@ -774,16 +803,16 @@ export default function App() {
 
                           {editingMsgId === msg.id ? (
                             <div className="flex flex-col gap-2 min-w-[200px]">
-                              <input type="text" value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)} className="text-black px-2 py-1 rounded text-sm w-full outline-none" autoFocus />
+                              <input type="text" value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)} className={`px-2 py-1 rounded text-sm w-full outline-none ${isDarkMode ? 'bg-gray-700 text-white' : 'text-black bg-white'}`} autoFocus />
                               <div className="flex justify-end gap-2">
                                 <button onClick={(e) => { e.stopPropagation(); setEditingMsgId(null); }} className="text-xs opacity-80 hover:opacity-100">取消</button>
-                                <button onClick={saveEditedMessage} className="text-xs font-bold bg-white text-blue-600 px-2 py-1 rounded">儲存</button>
+                                <button onClick={saveEditedMessage} className={`text-xs font-bold px-2 py-1 rounded ${isDarkMode ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600'}`}>儲存</button>
                               </div>
                             </div>
                           ) : (
                             <>
                               <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                              <div className={`flex items-center justify-end gap-1.5 mt-1 -mb-0.5 ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>
+                              <div className={`flex items-center justify-end gap-1.5 mt-1 -mb-0.5 ${isMe ? 'text-blue-200' : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>
                                 {msg.isEdited && <span className="text-[10px] font-medium">已編輯</span>}
                                 <span className="text-[10px] font-medium">{formatTime(msg.createdAt)}</span>
                               </div>
@@ -798,7 +827,7 @@ export default function App() {
                             <button 
                                key={emoji}
                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }}
-                               className={`flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm transition hover:scale-105 ${data.me ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600'}`}
+                               className={`flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm transition hover:scale-105 ${data.me ? (isDarkMode ? 'bg-blue-900/50 border-blue-700 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600') : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-600')}`}
                             >
                                <span>{emoji}</span>
                                {data.count > 1 && <span>{data.count}</span>}
@@ -816,14 +845,14 @@ export default function App() {
               )}
               {isCurrentChatBlockedByMe && (
                   <div className="text-center mt-6">
-                      <span className="bg-red-50 text-red-500 font-bold px-4 py-2 rounded-full text-sm">
+                      <span className={`font-bold px-4 py-2 rounded-full text-sm ${isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-500'}`}>
                           您已封鎖此用戶，無法接收其訊息。
                       </span>
                   </div>
               )}
               {isCurrentChatBlockedByThem && !isCurrentChatBlockedByMe && (
                   <div className="text-center mt-6">
-                      <span className="bg-gray-100 text-gray-500 font-bold px-4 py-2 rounded-full text-sm">
+                      <span className={`font-bold px-4 py-2 rounded-full text-sm ${isDarkMode ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'}`}>
                           此對話已被限制，無法傳送訊息。
                       </span>
                   </div>
@@ -831,26 +860,27 @@ export default function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="bg-white border-t flex flex-col relative" onClick={(e) => e.stopPropagation()}>
+            {/* 底部輸入列 */}
+            <div className={`border-t flex flex-col relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={(e) => e.stopPropagation()}>
               {replyingTo && !isCurrentChatBlocked && (
-                <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm">
+                <div className={`border-l-4 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm transition-colors ${isDarkMode ? 'bg-blue-900/30 border-blue-500' : 'bg-blue-50 border-blue-500'}`}>
                    <div className="flex-1 truncate mr-4">
-                     <span className="font-bold text-blue-600 mr-2">回覆 {replyingTo.senderName} :</span>
-                     <span className="text-gray-600">{replyingTo.imageUrl ? '[圖片]' : replyingTo.text}</span>
+                     <span className={`font-bold mr-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>回覆 {replyingTo.senderName} :</span>
+                     <span className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{replyingTo.imageUrl ? '[圖片]' : replyingTo.text}</span>
                    </div>
-                   <button onClick={() => setReplyingTo(null)} className="text-gray-400 hover:text-red-500 bg-white rounded-full p-1 shadow-sm font-bold w-6 h-6 flex items-center justify-center">✕</button>
+                   <button onClick={() => setReplyingTo(null)} className={`rounded-full p-1 shadow-sm font-bold w-6 h-6 flex items-center justify-center transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-400 hover:text-red-400' : 'bg-white text-gray-400 hover:text-red-500'}`}>✕</button>
                 </div>
               )}
 
               {selectedImage && !isCurrentChatBlocked && (
-                <div className="p-3 bg-gray-50 flex items-center justify-between border-b border-gray-100 mt-2 mx-4 rounded-xl border">
+                <div className={`p-3 flex items-center justify-between border-b mt-2 mx-4 rounded-xl border transition-colors ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-200 rounded overflow-hidden">
                        <img src={URL.createObjectURL(selectedImage)} className="w-full h-full object-cover" />
                     </div>
-                    <span className="text-sm text-gray-600 truncate max-w-[150px]">{selectedImage.name}</span>
+                    <span className={`text-sm truncate max-w-[150px] ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{selectedImage.name}</span>
                   </div>
-                  <button onClick={() => setSelectedImage(null)} className="text-gray-400 hover:text-red-500 font-bold p-1" disabled={isUploading}>✕</button>
+                  <button onClick={() => setSelectedImage(null)} className={`font-bold p-1 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-500'}`} disabled={isUploading}>✕</button>
                 </div>
               )}
               
@@ -858,47 +888,47 @@ export default function App() {
                 <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" disabled={isUploading || isCurrentChatBlocked} />
                 <button 
                   type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading || isCurrentChatBlocked}
-                  className={`bg-gray-100 p-3 rounded-full transition w-12 h-12 flex items-center justify-center flex-shrink-0 ${isCurrentChatBlocked ? 'opacity-30 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-200'}`} title="傳送圖片 (最大1MB)"
+                  className={`p-3 rounded-full transition w-12 h-12 flex items-center justify-center flex-shrink-0 ${isCurrentChatBlocked ? 'opacity-30 cursor-not-allowed' : (isDarkMode ? 'bg-gray-700 text-gray-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}`} title="傳送圖片 (最大1MB)"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 </button>
                 
                 {selectedImage ? (
-                   <div className="flex-1 flex items-center px-4 text-sm text-gray-500 font-bold bg-gray-100 h-12 rounded-3xl">
+                   <div className={`flex-1 flex items-center px-4 text-sm font-bold h-12 rounded-3xl transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
                      即將傳送一張圖片
                    </div>
                 ) : (
                   <input 
                     type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} disabled={isUploading || isCurrentChatBlocked}
                     placeholder={isCurrentChatBlocked ? "無法傳送訊息給此用戶" : "輸入訊息..."} 
-                    className="flex-1 p-3 bg-gray-100 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 px-6 h-12 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className={`flex-1 p-3 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 px-6 h-12 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-gray-700 text-white placeholder-gray-400 disabled:bg-gray-800' : 'bg-gray-100 text-gray-900 disabled:bg-gray-50'}`}
                   />
                 )}
                 
-                <button type="submit" disabled={(!newMessage.trim() && !selectedImage) || isUploading || isCurrentChatBlocked} className={`text-white p-3 rounded-full font-bold transition w-12 h-12 flex items-center justify-center shadow-md flex-shrink-0 ${isCurrentChatBlocked ? 'bg-gray-300 opacity-50 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300'}`}>
+                <button type="submit" disabled={(!newMessage.trim() && !selectedImage) || isUploading || isCurrentChatBlocked} className={`text-white p-3 rounded-full font-bold transition w-12 h-12 flex items-center justify-center shadow-md flex-shrink-0 ${isCurrentChatBlocked ? (isDarkMode ? 'bg-gray-700 opacity-50 cursor-not-allowed' : 'bg-gray-300 opacity-50 cursor-not-allowed') : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:opacity-50'}`}>
                   {isUploading ? <span className="animate-spin text-lg">⏳</span> : '➤'}
                 </button>
               </form>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
-            <svg className="w-24 h-24 mb-4 opacity-50 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-            <p className="text-lg font-bold text-gray-500">點擊左側列表開始聊天</p>
+          <div className={`flex-1 flex flex-col items-center justify-center transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+            <svg className={`w-24 h-24 mb-4 opacity-50 ${isDarkMode ? 'text-gray-700' : 'text-blue-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+            <p className="text-lg font-bold">點擊左側列表開始聊天</p>
           </div>
         )}
       </div>
 
-      {/* --- 其餘 Modals 維持不變 --- */}
+      {/* --- 其餘 Modals (群組/個人設定) 的深色模式支援 --- */}
       {isEditGroupModalOpen && currentRoom?.type === 'group' && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
             <h2 className="text-xl font-bold mb-4">編輯群組資訊</h2>
             <form onSubmit={handleEditGroupSubmit} className="space-y-4 text-left">
-              <div><label className="text-sm font-bold text-gray-600">群組名稱</label><input type="text" value={editGroupForm.name} onChange={(e) => setEditGroupForm({...editGroupForm, name: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required /></div>
-              <div><label className="text-sm font-bold text-gray-600">群組圖片網址</label><input type="url" value={editGroupForm.photoURL} onChange={(e) => setEditGroupForm({...editGroupForm, photoURL: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="圖片連結 (選填)" /></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>群組名稱</label><input type="text" value={editGroupForm.name} onChange={(e) => setEditGroupForm({...editGroupForm, name: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} required /></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>群組圖片網址</label><input type="url" value={editGroupForm.photoURL} onChange={(e) => setEditGroupForm({...editGroupForm, photoURL: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`} placeholder="圖片連結 (選填)" /></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setIsEditGroupModalOpen(false)} className="flex-1 bg-gray-100 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition">取消</button>
+                <button type="button" onClick={() => setIsEditGroupModalOpen(false)} className={`flex-1 py-3 rounded-xl font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
                 <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">儲存群組</button>
               </div>
             </form>
@@ -908,24 +938,24 @@ export default function App() {
 
       {isGroupModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[80vh]">
+          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[80vh] transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
             <h2 className="text-xl font-bold mb-4">{inviteMode ? '邀請成員加入' : '建立新群組'}</h2>
             {!inviteMode && (
-              <div className="mb-4"><label className="text-sm font-bold text-gray-600">群組名稱 (選填)</label><input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} className="w-full p-3 mt-1 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入群組名稱..." /></div>
+              <div className="mb-4"><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>群組名稱 (選填)</label><input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} className={`w-full p-3 mt-1 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`} placeholder="輸入群組名稱..." /></div>
             )}
-            <div className="flex-1 overflow-y-auto border border-gray-100 rounded-xl p-2 mb-4">
+            <div className={`flex-1 overflow-y-auto border rounded-xl p-2 mb-4 transition-colors ${isDarkMode ? 'border-gray-700 bg-gray-900/30' : 'border-gray-100 bg-white'}`}>
               {availableUsersToInvite.length > 0 ? availableUsersToInvite.map(u => (
-                <label key={u.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition">
+                <label key={u.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
                   <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={() => toggleUserSelect(u.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" />
                   <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                     {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500 text-xs">{u.username[0].toUpperCase()}</span>}
                   </div>
-                  <span className="font-bold text-gray-800">{u.username}</span>
+                  <span className="font-bold">{u.username}</span>
                 </label>
-              )) : <p className="text-center text-gray-400 p-4">沒有可以邀請的對象</p>}
+              )) : <p className={`text-center p-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>沒有可以邀請的對象</p>}
             </div>
             <div className="flex gap-2 mt-auto">
-              <button onClick={() => setIsGroupModalOpen(false)} className="flex-1 bg-gray-100 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition">取消</button>
+              <button onClick={() => setIsGroupModalOpen(false)} className={`flex-1 py-3 rounded-xl font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
               <button onClick={handleGroupSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">{inviteMode ? '邀請加入' : '建立群組'}</button>
             </div>
           </div>
@@ -934,16 +964,16 @@ export default function App() {
 
       {isProfileOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
             <h2 className="text-xl font-bold mb-4">編輯個人檔案</h2>
             <form onSubmit={handleSaveProfile} className="space-y-4 text-left">
-              <div><label className="text-sm font-bold text-gray-600">使用者名稱</label><input type="text" value={profileForm.username} onChange={(e) => setProfileForm({...profileForm, username: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required /></div>
-              <div><label className="text-sm font-bold text-gray-600">顯示信箱 (Email)</label><input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" required /><p className="text-xs text-gray-400 mt-1">此信箱將顯示給其他用戶，不影響登入帳號。</p></div>
-              <div><label className="text-sm font-bold text-gray-600">頭像網址</label><input type="url" value={profileForm.photoURL} onChange={(e) => setProfileForm({...profileForm, photoURL: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="圖片連結 (選填)" /></div>
-              <div><label className="text-sm font-bold text-gray-600">電話</label><input type="tel" value={profileForm.phone} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" /></div>
-              <div><label className="text-sm font-bold text-gray-600">地址</label><input type="text" value={profileForm.address} onChange={(e) => setProfileForm({...profileForm, address: e.target.value})} className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" /></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>使用者名稱</label><input type="text" value={profileForm.username} onChange={(e) => setProfileForm({...profileForm, username: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} required /></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>顯示信箱 (Email)</label><input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} required /><p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>此信箱將顯示給其他用戶，不影響登入帳號。</p></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>頭像網址</label><input type="url" value={profileForm.photoURL} onChange={(e) => setProfileForm({...profileForm, photoURL: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`} placeholder="圖片連結 (選填)" /></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>電話</label><input type="tel" value={profileForm.phone} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} /></div>
+              <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>地址</label><input type="text" value={profileForm.address} onChange={(e) => setProfileForm({...profileForm, address: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} /></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setIsProfileOpen(false)} className="flex-1 bg-gray-100 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition">取消</button>
+                <button type="button" onClick={() => setIsProfileOpen(false)} className={`flex-1 py-3 rounded-xl font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
                 <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">儲存變更</button>
               </div>
             </form>
