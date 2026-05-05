@@ -67,7 +67,6 @@ export default function App() {
   const userDataRef = useRef(null);
   const allUsersRef = useRef([]);
 
-  // 【新增】：用來記錄每個房間「最後被通知的時間」，防止舊訊息重複跳通知
   const notifiedTimesRef = useRef({});
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -153,7 +152,6 @@ export default function App() {
       snapshot.docChanges().forEach((change) => {
         const data = change.doc.data();
 
-        // 第一次載入時記錄每個房間的時間
         if (change.type === "added") {
           notifiedTimesRef.current[change.doc.id] = data.lastMessageTime || 0;
         }
@@ -162,7 +160,6 @@ export default function App() {
           const prevTime = notifiedTimesRef.current[change.doc.id] || 0;
           const currentTime = data.lastMessageTime || 0;
 
-          // 【核心修復】：確保只有在「發送新訊息」導致時間變新時，才進入通知判斷
           if (currentTime > prevTime) {
             notifiedTimesRef.current[change.doc.id] = currentTime;
 
@@ -319,7 +316,7 @@ export default function App() {
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setHighlightedMsgId(msgId);
-      setTimeout(() => setHighlightedMsgId(null), 1200); 
+      setTimeout(() => setHighlightedMsgId(null), 1300); 
     } else {
       alert("無法找到該則訊息，可能已被收回或刪除。");
     }
@@ -489,19 +486,19 @@ export default function App() {
   if (!user || !userData) {
     return (
       <div className={`flex flex-col items-center justify-center min-h-screen p-6 transition-colors duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-        <div className={`p-10 rounded-2xl shadow-xl w-full max-w-md transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+        <div className={`p-10 rounded-2xl shadow-xl w-full max-w-md animate-modal-pop transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
           <h1 className="text-3xl font-black text-center mb-6">{isRegistering ? '註冊帳號' : '會員登入'}</h1>
           {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm font-bold">{error}</div>}
           <form onSubmit={handleAuth} className="space-y-4">
             <input type="email" placeholder="電子郵件" value={email} onChange={(e) => setEmail(e.target.value)} required className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 text-gray-900'}`} />
             <input type="password" placeholder="密碼" value={password} onChange={(e) => setPassword(e.target.value)} required className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 text-gray-900'}`} />
-            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors">{isRegistering ? '註冊' : '登入'}</button>
+            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all">{isRegistering ? '註冊' : '登入'}</button>
           </form>
           <button onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className={`mt-4 w-full text-center text-sm font-bold hover:underline transition-colors ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
             {isRegistering ? '已有帳號？切換登入' : '沒有帳號？立即註冊'}
           </button>
           <div className="mt-6">
-            <button onClick={handleGoogleSignIn} className={`w-full border py-3 rounded-xl flex items-center justify-center space-x-3 font-bold shadow-sm transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+            <button onClick={handleGoogleSignIn} className={`w-full border py-3 rounded-xl flex items-center justify-center space-x-3 font-bold shadow-sm hover:scale-[1.02] active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
               <span>使用 Google 快速登入</span>
             </button>
           </div>
@@ -541,19 +538,42 @@ export default function App() {
   return (
     <div className={`flex h-screen overflow-hidden font-sans transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
       <style>{`
+        /* Wobble 動畫 */
         @keyframes pop-wobble {
           0% { transform: scale(1) rotate(0deg); }
-          15% { transform: scale(1.05) rotate(-3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
-          30% { transform: scale(1.05) rotate(3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
-          45% { transform: scale(1.05) rotate(-3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
-          60% { transform: scale(1.05) rotate(3deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
-          75% { transform: scale(1.05) rotate(-2deg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+          15% { transform: scale(1.1) rotate(-5deg); box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+          30% { transform: scale(1.1) rotate(5deg); box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+          45% { transform: scale(1.1) rotate(-5deg); box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+          60% { transform: scale(1.1) rotate(5deg); box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+          75% { transform: scale(1.1) rotate(-2deg); box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
           100% { transform: scale(1) rotate(0deg); }
         }
-        .animate-pop-wobble { animation: pop-wobble 1.2s ease-in-out; z-index: 20; position: relative; }
-        @keyframes slide-in-bottom { 0% { opacity: 0; transform: translateY(15px); } 100% { opacity: 1; transform: translateY(0); } }
-        .animate-slide-in-bottom { animation: slide-in-bottom 0.3s ease-out forwards; }
+        .animate-pop-wobble { animation: pop-wobble 1.2s ease-in-out forwards; z-index: 20; position: relative; }
         
+        /* 彈性進場動畫 */
+        @keyframes slide-in-bouncy { 
+          0% { opacity: 0; transform: translateY(30px) scale(0.95); } 
+          70% { transform: translateY(-5px) scale(1.02); }
+          100% { opacity: 1; transform: translateY(0) scale(1); } 
+        }
+        .animate-slide-in-bottom { animation: slide-in-bouncy 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        /* 彈出視窗動畫 */
+        @keyframes modal-pop {
+          0% { opacity: 0; transform: scale(0.8) translateY(20px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-modal-pop { animation: modal-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        /* 表情符號蹦出 */
+        @keyframes emoji-ping {
+          0% { transform: scale(0); opacity: 0; }
+          60% { transform: scale(1.3); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-emoji-ping { animation: emoji-ping 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+        /* 自訂卷軸 */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
@@ -563,8 +583,8 @@ export default function App() {
       {/* 左側 Sidebar */}
       <div className={`${currentRoom ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className={`p-4 border-b flex items-center justify-between transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80" onClick={() => setIsProfileOpen(true)}>
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+          <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsProfileOpen(true)}>
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden hover:scale-110 transition-transform">
               {userData.photoURL ? <img src={userData.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-blue-600">{userData.username[0].toUpperCase()}</span>}
             </div>
             <div>
@@ -576,12 +596,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button 
                onClick={() => setIsDarkMode(!isDarkMode)} 
-               className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+               className={`p-2 rounded-full hover:scale-110 active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
                title="切換深色/淺色模式"
             >
                {isDarkMode ? '🌙' : '☀️'}
             </button>
-            <button onClick={() => signOut(auth)} className="text-xs text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 p-2 rounded-lg transition">登出</button>
+            <button onClick={() => signOut(auth)} className="text-xs text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 p-2 rounded-lg hover:scale-105 active:scale-95 transition-all">登出</button>
           </div>
         </div>
 
@@ -606,7 +626,7 @@ export default function App() {
               const borderClass = isDarkMode ? 'border-gray-700' : 'border-gray-100';
 
               return (
-              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null); setReactionPickerMsgId(null);}} className={`p-4 border-b cursor-pointer transition flex items-center gap-3 ${borderClass} ${hoverClass} ${activeClass} ${isMuted ? 'opacity-50' : ''}`}>
+              <div key={room.id} onClick={() => {setCurrentRoom(room); setSearchQuery(''); setReplyingTo(null); setReactionPickerMsgId(null);}} className={`p-4 border-b cursor-pointer transition-all flex items-center gap-3 ${borderClass} ${hoverClass} ${activeClass} ${isMuted ? 'opacity-50' : ''}`}>
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 text-blue-600">
                   {getRoomPhoto(room) ? (
                     <img src={getRoomPhoto(room)} className="w-full h-full object-cover" alt="avatar" />
@@ -617,20 +637,20 @@ export default function App() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className={`font-bold truncate flex items-center justify-between ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <h3 className={`font-bold truncate flex items-center justify-between transition-colors ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                     <span>{getRoomName(room)} {isMuted && <span className="text-xs text-red-500 ml-1">(受限制)</span>}</span>
-                    <span className={`text-[10px] font-normal ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{formatTime(room.lastMessageTime)}</span>
+                    <span className={`text-[10px] font-normal transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{formatTime(room.lastMessageTime)}</span>
                   </h3>
-                  <p className={`text-sm truncate mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <p className={`text-sm truncate mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                     {isMuted ? '對話受到限制' : (isLastMessageBlocked ? '訊息已隱藏' : (room.lastMessage || '尚無訊息'))}
                   </p>
                 </div>
               </div>
-            )}) : <div className="p-6 text-center text-gray-400 mt-10">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
+            )}) : <div className="p-6 text-center text-gray-400 mt-10 animate-modal-pop">尚無聊天紀錄<br/><span className="text-sm">請點擊上方「所有用戶」發起私訊</span></div>
           ) : (
-            <>
+            <div className="animate-slide-in-bottom">
               <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                <button onClick={() => openGroupModal(false)} className={`w-full py-2 rounded-xl font-bold transition flex items-center justify-center gap-2 ${isDarkMode ? 'bg-blue-900/30 text-blue-400 border border-blue-800 hover:bg-blue-900/50' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'}`}>
+                <button onClick={() => openGroupModal(false)} className={`w-full py-2 rounded-xl font-bold hover:scale-[1.02] active:scale-95 transition flex items-center justify-center gap-2 ${isDarkMode ? 'bg-blue-900/30 text-blue-400 border border-blue-800 hover:bg-blue-900/50' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'}`}>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                   建立新群組
                 </button>
@@ -654,15 +674,15 @@ export default function App() {
                   <div className="flex gap-2">
                     <button 
                        onClick={() => handleToggleBlockUser(u.id, u.username)} 
-                       className={`px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm flex-shrink-0 ${isBlockedByMe ? (isDarkMode ? 'bg-red-900/50 text-red-400 hover:bg-red-900/70' : 'bg-red-100 text-red-600 hover:bg-red-200') : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}`}
+                       className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm flex-shrink-0 hover:scale-105 active:scale-95 transition-all ${isBlockedByMe ? (isDarkMode ? 'bg-red-900/50 text-red-400 hover:bg-red-900/70' : 'bg-red-100 text-red-600 hover:bg-red-200') : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}`}
                     >
                        {isBlockedByMe ? '解除封鎖' : '封鎖'}
                     </button>
-                    <button onClick={() => startPrivateChat(u)} className={`px-4 py-1.5 rounded-full text-sm font-bold transition shadow-sm flex-shrink-0 ${isDarkMode ? 'bg-blue-900/50 text-blue-400 hover:bg-blue-900/70' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>私訊</button>
+                    <button onClick={() => startPrivateChat(u)} className={`px-4 py-1.5 rounded-full text-sm font-bold shadow-sm flex-shrink-0 hover:scale-105 active:scale-95 transition-all ${isDarkMode ? 'bg-blue-900/50 text-blue-400 hover:bg-blue-900/70' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>私訊</button>
                   </div>
                 </div>
-              )}) : <div className="p-6 text-center text-gray-400 mt-10">目前沒有其他註冊用戶</div>}
-            </>
+              )}) : <div className="p-6 text-center text-gray-400 mt-10 animate-modal-pop">目前沒有其他註冊用戶</div>}
+            </div>
           )}
         </div>
       </div>
@@ -672,8 +692,8 @@ export default function App() {
         {currentRoom ? (
           <>
             <div className={`p-4 border-b flex items-center justify-between shadow-sm z-10 transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              <div className={`flex items-center flex-1 cursor-pointer p-2 rounded-lg transition ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`} onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
-                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); setReactionPickerMsgId(null); }} className={`md:hidden mr-3 font-bold px-3 py-1 rounded-lg ${isDarkMode ? 'bg-gray-700 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>←</button>
+              <div className={`flex items-center flex-1 min-w-0 cursor-pointer p-2 rounded-lg transition ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`} onClick={() => currentRoom.type === 'group' && openEditGroupModal()}>
+                <button onClick={(e) => { e.stopPropagation(); setCurrentRoom(null); setReplyingTo(null); setReactionPickerMsgId(null); }} className={`md:hidden mr-3 font-bold px-3 py-1 rounded-lg hover:scale-105 active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>←</button>
                 <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center overflow-hidden mr-3 flex-shrink-0">
                   {getRoomPhoto(currentRoom) ? (
                     <img src={getRoomPhoto(currentRoom)} className="w-full h-full object-cover" alt="avatar" />
@@ -683,8 +703,8 @@ export default function App() {
                     : <span className="font-bold text-xs">{getRoomName(currentRoom)[0].toUpperCase()}</span>
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className={`text-lg font-bold leading-tight truncate ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                <div className="flex-1 min-w-0 pr-2">
+                  <h2 className={`text-lg font-bold leading-tight truncate transition-colors ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                     {getRoomName(currentRoom)} 
                     {currentRoom.type === 'group' && <span className="text-xs text-blue-500 ml-1">✎ 編輯</span>}
                   </h2>
@@ -696,11 +716,11 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {currentRoom.type === 'private' && (
                   <button 
                     onClick={() => handleToggleBlockUser(currentChatOtherId, getRoomName(currentRoom))}
-                    className={`p-2 rounded-full transition flex-shrink-0 text-xs font-bold ${isCurrentChatBlockedByMe ? (isDarkMode ? 'bg-red-900/50 text-red-400 hover:bg-red-900/70' : 'bg-red-100 text-red-600 hover:bg-red-200') : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}`}
+                    className={`p-2 rounded-full flex-shrink-0 text-xs font-bold hover:scale-105 active:scale-95 transition-all ${isCurrentChatBlockedByMe ? (isDarkMode ? 'bg-red-900/50 text-red-400 hover:bg-red-900/70' : 'bg-red-100 text-red-600 hover:bg-red-200') : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}`}
                   >
                     {isCurrentChatBlockedByMe ? '解除封鎖' : '封鎖'}
                   </button>
@@ -710,7 +730,7 @@ export default function App() {
                   <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋訊息..." className={`w-32 md:w-48 pl-8 pr-3 py-1.5 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${isDarkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-gray-100 text-gray-900'}`} />
                   <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-                <button onClick={() => openGroupModal(true)} className={`p-2 rounded-full transition flex-shrink-0 ${isDarkMode ? 'bg-gray-700 text-blue-400 hover:bg-gray-600' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`} title="邀請新成員加入">
+                <button onClick={() => openGroupModal(true)} className={`p-2 rounded-full flex-shrink-0 hover:scale-110 active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-blue-400 hover:bg-gray-600' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`} title="邀請新成員加入">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
                 </button>
               </div>
@@ -724,7 +744,7 @@ export default function App() {
                 
                 if (isSystem) {
                   return (
-                    <div key={msg.id} id={`msg-${msg.id}`} className={`flex justify-center my-2 ${isHighlighted ? 'animate-pop-wobble' : ''}`}>
+                    <div key={msg.id} id={`msg-${msg.id}`} className={`flex justify-center my-2 ${isHighlighted ? 'animate-pop-wobble' : 'animate-slide-in-bottom'}`}>
                       <span className={`text-xs px-3 py-1 rounded-full font-medium ${isDarkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>{msg.text}</span>
                     </div>
                   );
@@ -756,65 +776,73 @@ export default function App() {
                     
                     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%] transition-transform duration-300 ${isHighlighted ? 'animate-pop-wobble' : ''} relative`}>
                       
+                      {/* 訊息操作浮動選單 */}
                       <div className={`flex gap-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5 ${isMe ? 'right-0' : 'left-0'} shadow-sm border rounded-lg px-1.5 py-1 z-20 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                         <button 
                            onClick={(e) => { e.stopPropagation(); setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id); }} 
-                           className={`text-xs px-1 transition hover:scale-110 ${isDarkMode ? 'text-gray-400 hover:text-blue-400' : 'text-gray-500 hover:text-blue-600'}`} title="加入表情"
+                           className={`text-xs px-1 transition hover:scale-125 active:scale-95 ${isDarkMode ? 'text-gray-400 hover:text-blue-400' : 'text-gray-500 hover:text-blue-600'}`} title="加入表情"
                         >😀</button>
-                        <button onClick={() => setReplyingTo(msg)} className={`text-xs px-1 font-bold ${isDarkMode ? 'text-gray-400 hover:text-blue-400' : 'text-gray-500 hover:text-blue-600'}`}>回覆</button>
-                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className={`text-xs px-1 font-bold ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>編輯</button>}
-                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className={`text-xs px-1 font-bold ${isDarkMode ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'}`}>收回</button>}
+                        <button onClick={() => setReplyingTo(msg)} className={`text-xs px-1 font-bold transition hover:scale-110 active:scale-95 ${isDarkMode ? 'text-gray-400 hover:text-blue-400' : 'text-gray-500 hover:text-blue-600'}`}>回覆</button>
+                        {isMe && !msg.imageUrl && <button onClick={() => startEditingMessage(msg)} className={`text-xs px-1 font-bold transition hover:scale-110 active:scale-95 ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>編輯</button>}
+                        {isMe && <button onClick={() => handleUnsendMessage(msg)} className={`text-xs px-1 font-bold transition hover:scale-110 active:scale-95 ${isDarkMode ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'}`}>收回</button>}
                       </div>
 
+                      {/* 表情選單面板 */}
                       {reactionPickerMsgId === msg.id && (
-                        <div className={`absolute -top-14 ${isMe ? 'right-0' : 'left-0'} shadow-lg border rounded-full px-3 py-2 flex gap-2 z-30 animate-slide-in-bottom ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                        <div className={`absolute -top-14 ${isMe ? 'right-0' : 'left-0'} shadow-lg border rounded-full px-3 py-2 flex gap-2 z-30 animate-modal-pop ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                           {EMOJI_LIST.map(emoji => (
-                             <button key={emoji} onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }} className="text-lg hover:scale-125 transition-transform origin-bottom">{emoji}</button>
+                             <button key={emoji} onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }} className="text-xl hover:scale-150 active:scale-90 transition-transform origin-bottom">{emoji}</button>
                           ))}
                         </div>
                       )}
 
+                      {/* 【核心修復】：在泡泡的容器上加上 max-w-full 確保不會突破 flex 父層 */}
                       {msg.imageUrl ? (
-                        <div className={`relative rounded-2xl overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : (isDarkMode ? 'border-gray-800' : 'border-black/5')} transition-all`}>
+                        <div className={`relative rounded-2xl max-w-full overflow-hidden shadow-sm border ${isHighlighted ? 'border-blue-400 ring-4 ring-blue-200' : (isDarkMode ? 'border-gray-800' : 'border-black/5')} transition-all`}>
                            {msg.replyTo && (
                              <div 
                                onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
-                               className={`p-2 text-xs cursor-pointer transition flex flex-col border-b ${isDarkMode ? 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700' : 'bg-black/80 text-white hover:bg-black border-white/20'}`}
+                               className={`p-2 w-full text-xs cursor-pointer transition flex flex-col border-b overflow-hidden ${isDarkMode ? 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700' : 'bg-black/80 text-white hover:bg-black border-white/20'}`}
                              >
-                               <span className={`font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-300'}`}>{msg.replyTo.senderName}</span>
-                               <span className="truncate opacity-80">{msg.replyTo.text}</span>
+                               <span className={`font-bold truncate ${isDarkMode ? 'text-blue-400' : 'text-blue-300'}`}>{msg.replyTo.senderName}</span>
+                               {/* 【修復】限制文字行數並自動換行 */}
+                               <span className="line-clamp-2 break-words opacity-80 whitespace-pre-wrap">{msg.replyTo.text}</span>
                              </div>
                            )}
-                           <img src={msg.imageUrl} alt="chat image" className="max-w-[200px] sm:max-w-[300px] h-auto object-cover block" />
+                           <img src={msg.imageUrl} alt="chat image" className="max-w-[200px] sm:max-w-[300px] h-auto object-cover block hover:opacity-95 transition-opacity" />
                            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 bg-black/40 text-white/90 text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm pointer-events-none">
                               <span>{formatTime(msg.createdAt)}</span>
                            </div>
                         </div>
                       ) : (
-                        <div className={`w-fit min-w-[3rem] rounded-2xl px-4 py-2 shadow-sm transition-all ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl' : ''} ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : (isDarkMode ? 'bg-gray-800 text-gray-100 rounded-tl-sm border border-gray-700' : 'bg-white text-gray-800 rounded-tl-sm border border-gray-200')}`}>
-                          {!isMe && <p className={`text-xs mb-1 font-bold ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{senderInfo.name}</p>}
+                        // 【核心修復】：加上 max-w-full 限制最大寬度
+                        <div className={`w-fit min-w-[3rem] max-w-full rounded-2xl px-4 py-2 shadow-sm transition-all ${isHighlighted ? 'ring-4 ring-blue-300 shadow-xl scale-[1.02]' : ''} ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : (isDarkMode ? 'bg-gray-800 text-gray-100 rounded-tl-sm border border-gray-700' : 'bg-white text-gray-800 rounded-tl-sm border border-gray-200')}`}>
+                          {!isMe && <p className={`text-xs mb-1 font-bold truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>{senderInfo.name}</p>}
                           
+                          {/* 引用區塊防爆處理 */}
                           {msg.replyTo && (
                             <div 
                               onClick={(e) => { e.stopPropagation(); scrollToMessage(msg.replyTo.id); }}
-                              className={`rounded p-2 mb-2 text-xs cursor-pointer transition flex flex-col border-l-4 ${isMe ? 'bg-white/20 hover:bg-white/30 border-blue-200' : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 border-blue-400' : 'bg-gray-100 hover:bg-gray-200 border-blue-400')}`}
+                              className={`rounded p-2 mb-2 text-xs w-full cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col text-left border-l-4 overflow-hidden ${isMe ? 'bg-white/20 hover:bg-white/30 border-blue-200' : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 border-blue-400' : 'bg-gray-100 hover:bg-gray-200 border-blue-400')}`}
                             >
-                              <span className="font-bold font-sans opacity-90">{msg.replyTo.senderName}</span>
-                              <span className="truncate opacity-80 mt-0.5">{msg.replyTo.text}</span>
+                              <span className="font-bold font-sans opacity-90 truncate">{msg.replyTo.senderName}</span>
+                              {/* 【修復】限制文字行數並自動換行 */}
+                              <span className="line-clamp-2 break-words opacity-80 mt-0.5 whitespace-pre-wrap">{msg.replyTo.text}</span>
                             </div>
                           )}
 
                           {editingMsgId === msg.id ? (
-                            <div className="flex flex-col gap-2 min-w-[200px]">
-                              <input type="text" value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)} className={`px-2 py-1 rounded text-sm w-full outline-none ${isDarkMode ? 'bg-gray-700 text-white' : 'text-black bg-white'}`} autoFocus />
+                            <div className="flex flex-col gap-2 min-w-[200px] animate-modal-pop">
+                              <input type="text" value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)} className={`px-2 py-1 rounded text-sm w-full outline-none transition-colors ${isDarkMode ? 'bg-gray-700 text-white focus:ring-1 focus:ring-blue-400' : 'text-black bg-white focus:ring-1 focus:ring-blue-400'}`} autoFocus />
                               <div className="flex justify-end gap-2">
-                                <button onClick={(e) => { e.stopPropagation(); setEditingMsgId(null); }} className="text-xs opacity-80 hover:opacity-100">取消</button>
-                                <button onClick={saveEditedMessage} className={`text-xs font-bold px-2 py-1 rounded ${isDarkMode ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600'}`}>儲存</button>
+                                <button onClick={(e) => { e.stopPropagation(); setEditingMsgId(null); }} className="text-xs opacity-80 hover:opacity-100 transition-opacity">取消</button>
+                                <button onClick={saveEditedMessage} className={`text-xs font-bold px-2 py-1 rounded hover:scale-105 active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-blue-400' : 'bg-white text-blue-600'}`}>儲存</button>
                               </div>
                             </div>
                           ) : (
                             <>
-                              <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                              {/* 【修復】文字本體也加上 break-words 防止超長單字撐爆版面 */}
+                              <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
                               <div className={`flex items-center justify-end gap-1.5 mt-1 -mb-0.5 ${isMe ? 'text-blue-200' : (isDarkMode ? 'text-gray-500' : 'text-gray-400')}`}>
                                 {msg.isEdited && <span className="text-[10px] font-medium">已編輯</span>}
                                 <span className="text-[10px] font-medium">{formatTime(msg.createdAt)}</span>
@@ -824,13 +852,14 @@ export default function App() {
                         </div>
                       )}
 
+                      {/* 表情徽章區域 (加入 animate-emoji-ping 動畫) */}
                       {Object.keys(reactionCounts).length > 0 && (
                         <div className={`absolute -bottom-4 flex gap-1 ${isMe ? 'right-2 flex-row-reverse' : 'left-2'} z-10`}>
                           {Object.entries(reactionCounts).map(([emoji, data]) => (
                             <button 
                                key={emoji}
                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji, msg.reactions); }}
-                               className={`flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm transition hover:scale-105 ${data.me ? (isDarkMode ? 'bg-blue-900/50 border-blue-700 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600') : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-600')}`}
+                               className={`flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm transition-all hover:scale-110 active:scale-90 animate-emoji-ping ${data.me ? (isDarkMode ? 'bg-blue-900/50 border-blue-700 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600') : (isDarkMode ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-600')}`}
                             >
                                <span>{emoji}</span>
                                {data.count > 1 && <span>{data.count}</span>}
@@ -844,17 +873,17 @@ export default function App() {
                 );
               })}
               {searchQuery && filteredMessages.length === 0 && (
-                 <div className="text-center text-gray-400 mt-10 text-sm">找不到包含「{searchQuery}」的訊息</div>
+                 <div className="text-center text-gray-400 mt-10 text-sm animate-modal-pop">找不到包含「{searchQuery}」的訊息</div>
               )}
               {isCurrentChatBlockedByMe && (
-                  <div className="text-center mt-6">
+                  <div className="text-center mt-6 animate-modal-pop">
                       <span className={`font-bold px-4 py-2 rounded-full text-sm ${isDarkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-500'}`}>
                           您已封鎖此用戶，無法接收其訊息。
                       </span>
                   </div>
               )}
               {isCurrentChatBlockedByThem && !isCurrentChatBlockedByMe && (
-                  <div className="text-center mt-6">
+                  <div className="text-center mt-6 animate-modal-pop">
                       <span className={`font-bold px-4 py-2 rounded-full text-sm ${isDarkMode ? 'bg-gray-800 text-gray-500' : 'bg-gray-100 text-gray-500'}`}>
                           此對話已被限制，無法傳送訊息。
                       </span>
@@ -866,24 +895,27 @@ export default function App() {
             {/* 底部輸入列 */}
             <div className={`border-t flex flex-col relative transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`} onClick={(e) => e.stopPropagation()}>
               {replyingTo && !isCurrentChatBlocked && (
-                <div className={`border-l-4 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm transition-colors ${isDarkMode ? 'bg-blue-900/30 border-blue-500' : 'bg-blue-50 border-blue-500'}`}>
-                   <div className="flex-1 truncate mr-4">
-                     <span className={`font-bold mr-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>回覆 {replyingTo.senderName} :</span>
-                     <span className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{replyingTo.imageUrl ? '[圖片]' : replyingTo.text}</span>
+                <div className={`border-l-4 p-3 mx-4 mt-2 rounded-r-xl flex justify-between items-center text-sm shadow-sm transition-all animate-slide-in-bottom ${isDarkMode ? 'bg-blue-900/30 border-blue-500' : 'bg-blue-50 border-blue-500'}`}>
+                   {/* 【核心修復】：將 truncate 換成 min-w-0，內部文字用 line-clamp-1 搭配 break-all 確保不撐爆版面 */}
+                   <div className="flex-1 min-w-0 mr-4">
+                     <p className="line-clamp-1 break-all">
+                       <span className={`font-bold mr-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>回覆 {replyingTo.senderName} :</span>
+                       <span className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{replyingTo.imageUrl ? '[圖片]' : replyingTo.text}</span>
+                     </p>
                    </div>
-                   <button onClick={() => setReplyingTo(null)} className={`rounded-full p-1 shadow-sm font-bold w-6 h-6 flex items-center justify-center transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-400 hover:text-red-400' : 'bg-white text-gray-400 hover:text-red-500'}`}>✕</button>
+                   <button onClick={() => setReplyingTo(null)} className={`rounded-full flex-shrink-0 p-1 shadow-sm font-bold w-6 h-6 flex items-center justify-center hover:scale-110 active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-gray-400 hover:text-red-400' : 'bg-white text-gray-400 hover:text-red-500'}`}>✕</button>
                 </div>
               )}
 
               {selectedImage && !isCurrentChatBlocked && (
-                <div className={`p-3 flex items-center justify-between border-b mt-2 mx-4 rounded-xl border transition-colors ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-200 rounded overflow-hidden">
+                <div className={`p-3 flex items-center justify-between border-b mt-2 mx-4 rounded-xl border transition-all animate-slide-in-bottom ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-gray-200 rounded overflow-hidden shadow-sm flex-shrink-0">
                        <img src={URL.createObjectURL(selectedImage)} className="w-full h-full object-cover" />
                     </div>
-                    <span className={`text-sm truncate max-w-[150px] ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{selectedImage.name}</span>
+                    <span className={`text-sm truncate font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{selectedImage.name}</span>
                   </div>
-                  <button onClick={() => setSelectedImage(null)} className={`font-bold p-1 transition-colors ${isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-500'}`} disabled={isUploading}>✕</button>
+                  <button onClick={() => setSelectedImage(null)} className={`font-bold p-1 flex-shrink-0 hover:scale-110 active:scale-95 transition-all ${isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-500'}`} disabled={isUploading}>✕</button>
                 </div>
               )}
               
@@ -891,32 +923,32 @@ export default function App() {
                 <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" disabled={isUploading || isCurrentChatBlocked} />
                 <button 
                   type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading || isCurrentChatBlocked}
-                  className={`p-3 rounded-full transition w-12 h-12 flex items-center justify-center flex-shrink-0 ${isCurrentChatBlocked ? 'opacity-30 cursor-not-allowed' : (isDarkMode ? 'bg-gray-700 text-gray-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}`} title="傳送圖片 (最大1MB)"
+                  className={`p-3 rounded-full flex items-center justify-center flex-shrink-0 hover:scale-105 active:scale-95 transition-all w-12 h-12 ${isCurrentChatBlocked ? 'opacity-30 cursor-not-allowed' : (isDarkMode ? 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-blue-400' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-blue-600')}`} title="傳送圖片 (最大1MB)"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 </button>
                 
                 {selectedImage ? (
-                   <div className={`flex-1 flex items-center px-4 text-sm font-bold h-12 rounded-3xl transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
+                   <div className={`flex-1 flex items-center px-4 text-sm font-bold h-12 rounded-3xl transition-colors min-w-0 ${isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
                      即將傳送一張圖片
                    </div>
                 ) : (
                   <input 
                     type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} disabled={isUploading || isCurrentChatBlocked}
                     placeholder={isCurrentChatBlocked ? "無法傳送訊息給此用戶" : "輸入訊息..."} 
-                    className={`flex-1 p-3 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 px-6 h-12 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-gray-700 text-white placeholder-gray-400 disabled:bg-gray-800' : 'bg-gray-100 text-gray-900 disabled:bg-gray-50'}`}
+                    className={`flex-1 p-3 rounded-3xl min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 px-6 h-12 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? 'bg-gray-700 text-white placeholder-gray-400 disabled:bg-gray-800' : 'bg-gray-100 text-gray-900 disabled:bg-gray-50'}`}
                   />
                 )}
                 
-                <button type="submit" disabled={(!newMessage.trim() && !selectedImage) || isUploading || isCurrentChatBlocked} className={`text-white p-3 rounded-full font-bold transition w-12 h-12 flex items-center justify-center shadow-md flex-shrink-0 ${isCurrentChatBlocked ? (isDarkMode ? 'bg-gray-700 opacity-50 cursor-not-allowed' : 'bg-gray-300 opacity-50 cursor-not-allowed') : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:opacity-50'}`}>
+                <button type="submit" disabled={(!newMessage.trim() && !selectedImage) || isUploading || isCurrentChatBlocked} className={`text-white p-3 rounded-full font-bold flex items-center justify-center shadow-md flex-shrink-0 hover:scale-[1.1] active:scale-90 transition-all w-12 h-12 ${isCurrentChatBlocked ? (isDarkMode ? 'bg-gray-700 opacity-50 cursor-not-allowed' : 'bg-gray-300 opacity-50 cursor-not-allowed') : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:opacity-50 disabled:hover:scale-100'}`}>
                   {isUploading ? <span className="animate-spin text-lg">⏳</span> : '➤'}
                 </button>
               </form>
             </div>
           </>
         ) : (
-          <div className={`flex-1 flex flex-col items-center justify-center transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
-            <svg className={`w-24 h-24 mb-4 opacity-50 ${isDarkMode ? 'text-gray-700' : 'text-blue-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+          <div className={`flex-1 flex flex-col items-center justify-center animate-modal-pop transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-600' : 'bg-gray-50 text-gray-400'}`}>
+            <svg className={`w-24 h-24 mb-4 opacity-50 transition-colors ${isDarkMode ? 'text-gray-700' : 'text-blue-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
             <p className="text-lg font-bold">點擊左側列表開始聊天</p>
           </div>
         )}
@@ -925,14 +957,14 @@ export default function App() {
       {/* --- 其餘 Modals (群組/個人設定) 的深色模式支援 --- */}
       {isEditGroupModalOpen && currentRoom?.type === 'group' && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl animate-modal-pop transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
             <h2 className="text-xl font-bold mb-4">編輯群組資訊</h2>
             <form onSubmit={handleEditGroupSubmit} className="space-y-4 text-left">
               <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>群組名稱</label><input type="text" value={editGroupForm.name} onChange={(e) => setEditGroupForm({...editGroupForm, name: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} required /></div>
               <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>群組圖片網址</label><input type="url" value={editGroupForm.photoURL} onChange={(e) => setEditGroupForm({...editGroupForm, photoURL: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`} placeholder="圖片連結 (選填)" /></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setIsEditGroupModalOpen(false)} className={`flex-1 py-3 rounded-xl font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
-                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">儲存群組</button>
+                <button type="button" onClick={() => setIsEditGroupModalOpen(false)} className={`flex-1 py-3 rounded-xl font-bold hover:scale-[1.02] active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all shadow-md">儲存群組</button>
               </div>
             </form>
           </div>
@@ -941,14 +973,14 @@ export default function App() {
 
       {isGroupModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[80vh] transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[80vh] animate-modal-pop transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
             <h2 className="text-xl font-bold mb-4">{inviteMode ? '邀請成員加入' : '建立新群組'}</h2>
             {!inviteMode && (
               <div className="mb-4"><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>群組名稱 (選填)</label><input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)} className={`w-full p-3 mt-1 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 placeholder-gray-400'}`} placeholder="輸入群組名稱..." /></div>
             )}
             <div className={`flex-1 overflow-y-auto border rounded-xl p-2 mb-4 transition-colors ${isDarkMode ? 'border-gray-700 bg-gray-900/30' : 'border-gray-100 bg-white'}`}>
               {availableUsersToInvite.length > 0 ? availableUsersToInvite.map(u => (
-                <label key={u.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
+                <label key={u.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}>
                   <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={() => toggleUserSelect(u.id)} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" />
                   <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                     {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <span className="font-bold text-gray-500 text-xs">{u.username[0].toUpperCase()}</span>}
@@ -958,8 +990,8 @@ export default function App() {
               )) : <p className={`text-center p-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>沒有可以邀請的對象</p>}
             </div>
             <div className="flex gap-2 mt-auto">
-              <button onClick={() => setIsGroupModalOpen(false)} className={`flex-1 py-3 rounded-xl font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
-              <button onClick={handleGroupSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">{inviteMode ? '邀請加入' : '建立群組'}</button>
+              <button onClick={() => setIsGroupModalOpen(false)} className={`flex-1 py-3 rounded-xl font-bold hover:scale-[1.02] active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
+              <button onClick={handleGroupSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all shadow-md">{inviteMode ? '邀請加入' : '建立群組'}</button>
             </div>
           </div>
         </div>
@@ -967,7 +999,7 @@ export default function App() {
 
       {isProfileOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+          <div className={`rounded-2xl w-full max-w-md p-6 shadow-2xl animate-modal-pop transition-colors duration-300 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
             <h2 className="text-xl font-bold mb-4">編輯個人檔案</h2>
             <form onSubmit={handleSaveProfile} className="space-y-4 text-left">
               <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>使用者名稱</label><input type="text" value={profileForm.username} onChange={(e) => setProfileForm({...profileForm, username: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} required /></div>
@@ -976,8 +1008,8 @@ export default function App() {
               <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>電話</label><input type="tel" value={profileForm.phone} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} /></div>
               <div><label className={`text-sm font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>地址</label><input type="text" value={profileForm.address} onChange={(e) => setProfileForm({...profileForm, address: e.target.value})} className={`w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200'}`} /></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setIsProfileOpen(false)} className={`flex-1 py-3 rounded-xl font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
-                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">儲存變更</button>
+                <button type="button" onClick={() => setIsProfileOpen(false)} className={`flex-1 py-3 rounded-xl font-bold hover:scale-[1.02] active:scale-95 transition-all ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>取消</button>
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all shadow-md">儲存變更</button>
               </div>
             </form>
           </div>
